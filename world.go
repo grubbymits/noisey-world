@@ -76,16 +76,64 @@ func biome(h, m float64) uint8 {
   }
 }
 
-type RiverNode struct {
-  preds, succs []RiverNode
+type GradNode struct {
+  preds, succs []*GradNode
+  weight int
+}
+
+func (n GradNode) finalise() {
+  for _, pred := range n.preds {
+    n.weight += (pred.weight / len(pred.succs))
+  }
+}
+
+type Location struct {
+  height, moisture float64
+  biome uint8
+  node GradNode
+}
+
+func (l Location) addSuccessor(other *Location) {
+  l.node.succs = append(l.node.succs, &other.node)
+}
+
+func (l Location) addPredecessor(other *Location) {
+  l.node.preds = append(l.node.preds, &other.node)
 }
 
 type WorldMap struct {
   width, height int
-  heightMap []float64
-  biomeMap []uint8
-  gradientMap []RiverNode
+  locations []Location
+  gradientMap []GradNode
   hFreq, mFreq float64
+}
+
+func (w WorldMap) Location(x, y int) *Location {
+  return &w.locations[y * w.width + x]
+}
+
+func (w WorldMap) Moisture(x, y int) float64 {
+  return w.locations[y * w.width + x].moisture
+}
+
+func (w WorldMap) Height(x, y int) float64 {
+  return w.locations[y * w.width + x].height
+}
+
+func (w WorldMap) Biome(x, y int) uint8 {
+  return w.locations[y * w.width + x].biome
+}
+
+func (w WorldMap) SetMoisture(x, y int, m float64) {
+  w.locations[y * w.width + x].moisture = m
+}
+
+func (w WorldMap) SetHeight(x, y int, h float64) {
+  w.locations[y * w.width + x].height = h
+}
+
+func (w WorldMap) SetBiome(x, y int, b uint8) {
+  w.locations[y * w.width + x].biome = b
 }
 /*
 func (world WorldMap) AddRivers() {
@@ -100,36 +148,51 @@ func (world WorldMap) AddRivers() {
   }
 }*/
 
-func (world WorldMap) CalcGradient(xBegin, xEnd int, c chan int) {
-  width := world.width
-  height := world.height
+func (w WorldMap) CalcGradient(xBegin, xEnd int, c chan int) {
+  width := w.width
+  height := w.height
 
   for y := 0; y < height; y++ {
     for x := xBegin; x < xEnd; x++ {
-      startHeight := world.heightMap[(y * width) + x]
-      maxGradient := 0.0
-      nextIndex := 0
-      
-      for y2 := y - 1; y2 < y + 1; y2++ {
-        if y2 < 0 || y2 >= height {
-          continue
-        }
-        for x2 := x - 1; x2 < x + 1; x2++ {
-          if x2 < 0 || x >= width {
-            continue
-          }
-          nextHeight := world.heightMap[(y2 * width + x2)]
-          if nextHeight > startHeight {
-            continue
-          }
-          newGrad := math.Abs(startHeight - nextHeight)
-          if newGrad > maxGradient {
-            maxGradient = newGrad
-            nextIndex = y2 * width + x2
-          }
+
+      centreLoc := w.Location(x, y)
+
+      if y - 1 >= 0 {
+        otherLoc := w.Location(x, y - 1)
+        if otherLoc.height < centreLoc.height {
+          centreLoc.addSuccessor(otherLoc)
+        } else if otherLoc.height > centreLoc.height {
+          centreLoc.addPredecessor(otherLoc)
         }
       }
-      world.gradientMap[y * width + x] = nextIndex
+
+      if x + 1 < width {
+        otherLoc := w.Location(x + 1, y)
+        if otherLoc.height < centreLoc.height {
+          centreLoc.addSuccessor(otherLoc)
+        } else if otherLoc.height > centreLoc.height {
+          centreLoc.addPredecessor(otherLoc)
+        }
+      }
+
+      if y + 1 < height {
+        otherLoc := w.Location(x, y + 1)
+        if otherLoc.height < centreLoc.height {
+          centreLoc.addSuccessor(otherLoc)
+        }   else if otherLoc.height > centreLoc.height {
+          centreLoc.addPredecessor(otherLoc)
+        }
+      }
+
+      if x - 1 >= 0 {
+        otherLoc := w.Location(x - 1, y)
+        if otherLoc.height < centreLoc.height {
+          centreLoc.addSuccessor(otherLoc)
+        } else if otherLoc.height > centreLoc.height {
+          centreLoc.addPredecessor(otherLoc)
+        }
+      }
+      centreLoc.node.finalise()
     }
   }
   c <- 1
@@ -153,7 +216,7 @@ func (world WorldMap) CalcHeight(xBegin, xEnd int,
              heightBias * float64(height - y)
 
       h  = math.Pow(h, float64(1 + (y / height)))
-      world.heightMap[(y * width) + x] = h
+      world.SetHeight(x, y, h)
     }
   }
   c <- 1
@@ -177,7 +240,8 @@ func (world WorldMap) CalcBiome(xBegin, xEnd int,
              0.125 * noise.Eval2(8 * freq * xFloat, 8 * freq * yFloat)
 
       //m = math.Pow(m, tempBias * float64(y))
-      world.biomeMap[(y * width) + x] = biome(world.heightMap[(y * width) + x], m)
+      world.SetMoisture(x, y, m)
+      world.SetBiome(x, y, biome(world.Height(x, y), m))
     }
   }
   c <- 1
@@ -193,9 +257,8 @@ func GenerateMap(hFreq, mFreq float64, width, height, numCPUs int) {
   mNoise := opensimplex.NewWithSeed(mSeed)
 
   world := WorldMap{ width, height,
-                     make([]float64, width * height),
-                     make([]uint8, width * height),
-                     make([]int, width * height),
+                     make([]Location, width * height),
+                     make([]GradNode, width * height),
                      hFreq, mFreq }
 
   start := time.Now()
@@ -246,7 +309,7 @@ func GenerateMap(hFreq, mFreq float64, width, height, numCPUs int) {
   bounds := img.Bounds()
   for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
     for x := bounds.Min.X; x < bounds.Max.X; x++ {
-      img.Set(x, y, colours[world.biomeMap[(y * width) + x]])
+      img.Set(x, y, colours[world.Biome(x, y)])
     }
   }
 
