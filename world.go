@@ -1,6 +1,7 @@
 package main
 
 import (
+  "flag"
   "fmt"
   "image"
   "image/color"
@@ -33,7 +34,7 @@ const (
   TROPICAL_RAIN_FOREST
 )
 
-func biome(h, m float64) uint8 {      
+func biome(h, m float64) uint8 {
   if (h < -0.4) {
     return OCEAN
   } else if (h < -0.3) {
@@ -64,7 +65,7 @@ func biome(h, m float64) uint8 {
     }
     return TEMPERATE_RAIN_FOREST
   }
-  
+
   if (m < -0.8) {
     return SUBTROPICAL_DESERT
   } else if (m < -0.2) {
@@ -271,20 +272,17 @@ func GenerateMap(hFreq, mFreq float64, width, height, numCPUs int) {
   for i := 0; i < numCPUs; i++ {
     <-c
   }
+
+  c = make(chan int, numCPUs*2)
   for i := 0; i < numCPUs; i++ {
     go world.CalcGradient(i * width / numCPUs,
                           (i + 1) * width / numCPUs,
                           c)
-  }
-  for i := 0; i < numCPUs; i++ {
-    <-c
-  }
-  for i := 0; i < numCPUs; i++ {
     go world.CalcBiome(i * width / numCPUs,
                           (i + 1) * width / numCPUs,
                           mNoise, c)
   }
-  for i := 0; i < numCPUs; i++ {
+  for i := 0; i < numCPUs*2; i++ {
     <-c
   }
   fmt.Println("Duration: ", time.Now().Sub(start))
@@ -331,8 +329,15 @@ func GenerateMap(hFreq, mFreq float64, width, height, numCPUs int) {
 }
 
 func main() {
-  const width, height = 4000, 4000
-  const hFreq, mFreq = 5, 2
-  fmt.Println("CPUs: ", runtime.NumCPU())
-  GenerateMap(hFreq, mFreq, width, height, runtime.NumCPU())
+  width := flag.Int("width", 4000, "map width")
+  height := flag.Int("height", 4000, "map height")
+  hFreq := flag.Float64("hfreq", 5, "height noise frequency")
+  mFreq := flag.Float64("mfreq", 2, "moisture noise frequency")
+  threads := flag.Int("cpus", runtime.NumCPU(), "number of cores to use")
+
+  flag.Parse()
+
+  fmt.Println("width, height, threads")
+  fmt.Println(*width, ",", *height, ",", *threads)
+  GenerateMap(*hFreq, *mFreq, *width, *height, *threads)
 }
