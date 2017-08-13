@@ -14,6 +14,7 @@ import (
   "strconv"
   "time"
 )
+
 import "github.com/ojrac/opensimplex-go"
 
 const (
@@ -34,8 +35,11 @@ const (
   TROPICAL_RAIN_FOREST
 )
 
+const WATER_LEVEL = -0.4
+const WATER_SATURATION = 0.5
+
 func biome(h, m float64) uint8 {
-  if (h < -0.4) {
+  if (h < WATER_LEVEL) {
     return OCEAN
   } else if (h < -0.3) {
     return BEACH
@@ -77,93 +81,189 @@ func biome(h, m float64) uint8 {
   }
 }
 
-type GradNode struct {
-  preds, succs []*GradNode
-  weight int
-}
-
-func (n GradNode) finalise() {
-  for _, pred := range n.preds {
-    n.weight += (pred.weight / len(pred.succs))
-  }
-}
-
 type Location struct {
   height, moisture float64
+  x, y int
+  preds, succs [4]*Location
+  numPreds, numSuccs int
+  discovered, weight int
+  water float64
   biome uint8
-  node GradNode
 }
 
-func (l Location) addSuccessor(other *Location) {
-  l.node.succs = append(l.node.succs, &other.node)
+func (l *Location) addSuccessor(other *Location) {
+  l.succs[l.numSuccs] = other
+  l.numSuccs++
 }
 
-func (l Location) addPredecessor(other *Location) {
-  l.node.preds = append(l.node.preds, &other.node)
+func (l *Location) addPredecessor(other *Location) {
+  l.preds[l.numPreds] = other
+  l.numPreds = l.numPreds + 1
 }
 
-type WorldMap struct {
+type World struct {
   width, height int
   locations []Location
-  gradientMap []GradNode
+  peaks map[*Location]bool
+  lakes map[*Location]bool
   hFreq, mFreq float64
 }
 
-func (w WorldMap) Location(x, y int) *Location {
-  return &w.locations[y * w.width + x]
-}
-
-func (w WorldMap) Moisture(x, y int) float64 {
-  return w.locations[y * w.width + x].moisture
-}
-
-func (w WorldMap) Height(x, y int) float64 {
-  return w.locations[y * w.width + x].height
-}
-
-func (w WorldMap) Biome(x, y int) uint8 {
-  return w.locations[y * w.width + x].biome
-}
-
-func (w WorldMap) SetMoisture(x, y int, m float64) {
-  w.locations[y * w.width + x].moisture = m
-}
-
-func (w WorldMap) SetHeight(x, y int, h float64) {
-  w.locations[y * w.width + x].height = h
-}
-
-func (w WorldMap) SetBiome(x, y int, b uint8) {
-  w.locations[y * w.width + x].biome = b
-}
-/*
-func (world WorldMap) AddRivers() {
-  width := world.width
-  height := world.height
+func CreateWorld(width, height int, hFreq, mFreq float64) *World {
+  w := new(World)
+  w.width = width;
+  w.height = height;
+  w.locations = make([]Location, width * height)
+  w.peaks = make(map[*Location]bool)
+  w.lakes = make(map[*Location]bool)
+  w.hFreq = hFreq
+  w.mFreq = mFreq
 
   for y := 0; y < height; y++ {
     for x := 0; x < width; x++ {
-      startHeight := world.heightMap[(y * width) + x]
-      if startHeight > 0.7
+       loc := w.Location(x, y)
+       loc.x = x
+       loc.y =y
     }
   }
-}*/
+  return w
+}
 
-func (w WorldMap) CalcGradient(xBegin, xEnd int, c chan int) {
+func (w World) addPeak(l *Location) {
+  w.peaks[l] = true
+}
+
+func (w World) addLake(l *Location) {
+  w.lakes[l] = true
+}
+
+func (w World) Location(x, y int) *Location {
+  return &w.locations[y * w.width + x]
+}
+
+func (w World) Moisture(x, y int) float64 {
+  return w.locations[y * w.width + x].moisture
+}
+
+func (w World) Height(x, y int) float64 {
+  return w.locations[y * w.width + x].height
+}
+
+func (w World) Biome(x, y int) uint8 {
+  return w.locations[y * w.width + x].biome
+}
+
+func (w World) SetMoisture(x, y int, m float64) {
+  w.locations[y * w.width + x].moisture = m
+}
+
+func (w World) SetHeight(x, y int, h float64) {
+  w.locations[y * w.width + x].height = h
+}
+
+func (w World) SetBiome(x, y int, b uint8) {
+  w.locations[y * w.width + x].biome = b
+}
+
+func (w World) AddRivers() {
+  queue := make([]*Location, len(w.peaks))
+
+  i := 0
+  for loc, _ := range w.peaks {
+    loc.water = 4 + loc.moisture
+    queue[i] = loc
+    i++
+  }
+
+  // Iterate through all queue, which will hold every location eventually.
+  for n := 0; n < w.height * w.width; n++ {
+    loc := queue[0]
+    queue = queue[1:]
+
+    // Receive water from all of the predecessors. 
+    for i := 0; i < loc.numPreds; i++ {
+
+      pred := loc.preds[i]
+      totalGradient := 0.0
+
+      // Calculate percentage of predecessor's water the successor will
+      // receive.
+      for j := 0; j < pred.numSuccs; j++ {
+        succ := pred.succs[j]
+        totalGradient += math.Abs(pred.height) - math.Abs(succ.height)
+      }
+
+      gradientRatio := (math.Abs(pred.height) - math.Abs(loc.height)) / totalGradient
+      water := gradientRatio * pred.water
+      loc.water += water
+    }
+    //loc.water += loc.moisture
+
+    if loc.water > WATER_SATURATION {
+      w.SetBiome(loc.x, loc.y, OCEAN)
+    }
+
+    // Discover all of the Location's successors and add them to the queue if
+    // they've been discovered by all their predecessors.
+    for i := 0; i < loc.numSuccs; i++ {
+      succ := loc.succs[i]
+      succ.discovered++
+      if succ.discovered == succ.numPreds {
+        queue = append(queue, succ)
+        succ.discovered = 0 // reset for next phase
+      }
+    }
+  }
+
+  // Traverse back up from lakes to fill out the lakes and the lower regions of
+  // the rivers.
+  queue = make([]*Location, len(w.lakes))
+  i = 0
+  for loc, _ := range w.lakes {
+    queue[i] = loc
+    i++
+  }
+  for n := 0; n < w.height * w.width; n++ {
+    loc := queue[0]
+    queue = queue[1:]
+
+    if loc.water > WATER_SATURATION {
+      w.SetBiome(loc.x, loc.y, OCEAN)
+    }
+
+    for i := 0; i < loc.numPreds; i++ {
+      pred := loc.preds[i]
+      if loc.water > WATER_SATURATION {
+        water := (loc.water - WATER_SATURATION) / float64(loc.numPreds)
+        pred.water += water
+      }
+      pred.discovered++
+      if pred.discovered == pred.numSuccs {
+        queue = append(queue, pred)
+      }
+    }
+  }
+}
+
+func (w World) CalcGradient(c chan int) {
   width := w.width
   height := w.height
 
   for y := 0; y < height; y++ {
-    for x := xBegin; x < xEnd; x++ {
+    for x := 0; x < width; x++ {
 
       centreLoc := w.Location(x, y)
+      hasPredecessor := false
+      hasSuccessor := false
 
       if y - 1 >= 0 {
         otherLoc := w.Location(x, y - 1)
         if otherLoc.height < centreLoc.height {
           centreLoc.addSuccessor(otherLoc)
+          hasSuccessor = true
         } else if otherLoc.height > centreLoc.height {
           centreLoc.addPredecessor(otherLoc)
+          hasPredecessor = true
         }
       }
 
@@ -171,8 +271,10 @@ func (w WorldMap) CalcGradient(xBegin, xEnd int, c chan int) {
         otherLoc := w.Location(x + 1, y)
         if otherLoc.height < centreLoc.height {
           centreLoc.addSuccessor(otherLoc)
+          hasSuccessor = true
         } else if otherLoc.height > centreLoc.height {
           centreLoc.addPredecessor(otherLoc)
+          hasPredecessor = true
         }
       }
 
@@ -180,8 +282,10 @@ func (w WorldMap) CalcGradient(xBegin, xEnd int, c chan int) {
         otherLoc := w.Location(x, y + 1)
         if otherLoc.height < centreLoc.height {
           centreLoc.addSuccessor(otherLoc)
-        }   else if otherLoc.height > centreLoc.height {
+          hasSuccessor = true
+        } else if otherLoc.height > centreLoc.height {
           centreLoc.addPredecessor(otherLoc)
+          hasPredecessor = true
         }
       }
 
@@ -189,17 +293,23 @@ func (w WorldMap) CalcGradient(xBegin, xEnd int, c chan int) {
         otherLoc := w.Location(x - 1, y)
         if otherLoc.height < centreLoc.height {
           centreLoc.addSuccessor(otherLoc)
+          hasSuccessor = true
         } else if otherLoc.height > centreLoc.height {
           centreLoc.addPredecessor(otherLoc)
+          hasPredecessor = true
         }
       }
-      centreLoc.node.finalise()
+      if !hasPredecessor {
+        w.addPeak(w.Location(x, y))
+      } else if !hasSuccessor {
+        w.addLake(w.Location(x, y))
+      }
     }
   }
   c <- 1
 }
 
-func (world WorldMap) CalcHeight(xBegin, xEnd int,
+func (world World) CalcHeight(xBegin, xEnd int,
                                  noise *opensimplex.Noise, c chan int) {
   freq := world.hFreq
   width := world.width
@@ -223,7 +333,7 @@ func (world WorldMap) CalcHeight(xBegin, xEnd int,
   c <- 1
 }
 
-func (world WorldMap) CalcBiome(xBegin, xEnd int,
+func (world World) CalcBiome(xBegin, xEnd int,
                                   noise *opensimplex.Noise,
                                   c chan int) {
   freq := world.mFreq
@@ -243,6 +353,7 @@ func (world WorldMap) CalcBiome(xBegin, xEnd int,
       //m = math.Pow(m, tempBias * float64(y))
       world.SetMoisture(x, y, m)
       world.SetBiome(x, y, biome(world.Height(x, y), m))
+      //world.CalcGradient(x, y)
     }
   }
   c <- 1
@@ -257,12 +368,12 @@ func GenerateMap(hFreq, mFreq float64, width, height, numCPUs int) {
   hNoise := opensimplex.NewWithSeed(hSeed)
   mNoise := opensimplex.NewWithSeed(mSeed)
 
-  world := WorldMap{ width, height,
-                     make([]Location, width * height),
-                     make([]GradNode, width * height),
-                     hFreq, mFreq }
+  world := CreateWorld(width, height, hFreq, mFreq)
 
   start := time.Now()
+
+  // Height can be computed in parallel, but needs to happen before anything
+  // else.
   c := make(chan int, numCPUs)
   for i := 0; i < numCPUs; i++ {
     go world.CalcHeight(i * width / numCPUs,
@@ -273,19 +384,22 @@ func GenerateMap(hFreq, mFreq float64, width, height, numCPUs int) {
     <-c
   }
 
-  c = make(chan int, numCPUs*2)
+  c = make(chan int, numCPUs + 1)
+  go world.CalcGradient(c);
+
   for i := 0; i < numCPUs; i++ {
-    go world.CalcGradient(i * width / numCPUs,
-                          (i + 1) * width / numCPUs,
-                          c)
     go world.CalcBiome(i * width / numCPUs,
                           (i + 1) * width / numCPUs,
                           mNoise, c)
   }
-  for i := 0; i < numCPUs*2; i++ {
+  for i := 0; i < numCPUs + 1; i++ {
     <-c
   }
-  fmt.Println("Duration: ", time.Now().Sub(start))
+  world.AddRivers()
+
+  fmt.Println("Duration: ", time.Now().Sub(start));
+  fmt.Println("Number of peaks: ", len(world.peaks));
+  fmt.Println("Numer of lakes: ", len(world.lakes));
 
   img := image.NewRGBA(image.Rect(0, 0, width, height))
   colours := [15]color.RGBA{ { 51, 166, 204, 255 },  // OCEAN
@@ -310,8 +424,6 @@ func GenerateMap(hFreq, mFreq float64, width, height, numCPUs int) {
       img.Set(x, y, colours[world.Biome(x, y)])
     }
   }
-
-  // split the map into parts, select the highest point
 
   filename := "h" + strconv.FormatInt(hSeed, 10) + "-" +
               "m" + strconv.FormatInt(mSeed, 10) + ".png"
