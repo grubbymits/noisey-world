@@ -36,7 +36,7 @@ const (
 )
 
 const WATER_LEVEL = -0.4
-const WATER_SATURATION = 0.5
+const WATER_SATURATION = 1
 
 func biome(h, m float64) uint8 {
   if (h < WATER_LEVEL) {
@@ -106,10 +106,10 @@ type World struct {
   locations []Location
   peaks map[*Location]bool
   lakes map[*Location]bool
-  hFreq, mFreq float64
+  hFreq, mFreq, water float64
 }
 
-func CreateWorld(width, height int, hFreq, mFreq float64) *World {
+func CreateWorld(width, height int, hFreq, mFreq, water float64) *World {
   w := new(World)
   w.width = width;
   w.height = height;
@@ -118,6 +118,7 @@ func CreateWorld(width, height int, hFreq, mFreq float64) *World {
   w.lakes = make(map[*Location]bool)
   w.hFreq = hFreq
   w.mFreq = mFreq
+  w.water = water
 
   for y := 0; y < height; y++ {
     for x := 0; x < width; x++ {
@@ -170,7 +171,7 @@ func (w World) AddRivers() {
 
   i := 0
   for loc, _ := range w.peaks {
-    loc.water = 4 + loc.moisture
+    loc.water = w.water + loc.moisture
     queue[i] = loc
     i++
   }
@@ -197,10 +198,9 @@ func (w World) AddRivers() {
       water := gradientRatio * pred.water
       loc.water += water
     }
-    //loc.water += loc.moisture
 
-    if loc.water > WATER_SATURATION {
-      w.SetBiome(loc.x, loc.y, OCEAN)
+    if loc.moisture > 1 {
+      loc.water *= loc.moisture
     }
 
     // Discover all of the Location's successors and add them to the queue if
@@ -227,10 +227,6 @@ func (w World) AddRivers() {
     loc := queue[0]
     queue = queue[1:]
 
-    if loc.water > WATER_SATURATION {
-      w.SetBiome(loc.x, loc.y, OCEAN)
-    }
-
     for i := 0; i < loc.numPreds; i++ {
       pred := loc.preds[i]
       if loc.water > WATER_SATURATION {
@@ -240,6 +236,55 @@ func (w World) AddRivers() {
       pred.discovered++
       if pred.discovered == pred.numSuccs {
         queue = append(queue, pred)
+        pred.discovered = 0
+      }
+    }
+  }
+
+  // On the second pass, the amount of water passed to the successors isn't
+  // based upon the gradient but the amount of water. The water is distributed
+  // to try to even the flow.
+  queue = make([]*Location, len(w.peaks))
+  i = 0
+  for loc, _ := range w.peaks {
+    queue[i] = loc
+    i++
+  }
+
+  fmt.Println("Second pass, size of queue: ", len(queue))
+  for n := 0; n < w.height * w.width; n++ {
+    loc := queue[0]
+    queue = queue[1:]
+
+    // Receive water from all of the predecessors. 
+    for i := 0; i < loc.numPreds; i++ {
+
+      pred := loc.preds[i]
+      totalWater := 0.0
+
+      // Calculate percentage of predecessor's water the successor will
+      // receive.
+      for j := 0; j < pred.numSuccs; j++ {
+        succ := pred.succs[j]
+        totalWater += succ.water
+      }
+
+      waterRatio := totalWater / loc.water
+      water := waterRatio * (pred.water - WATER_SATURATION)
+      loc.water += water
+    }
+
+    if loc.water > WATER_SATURATION {
+      w.SetBiome(loc.x, loc.y, OCEAN)
+    }
+
+    // Discover all of the Location's successors and add them to the queue if
+    // they've been discovered by all their predecessors.
+    for i := 0; i < loc.numSuccs; i++ {
+      succ := loc.succs[i]
+      succ.discovered++
+      if succ.discovered == succ.numPreds {
+        queue = append(queue, succ)
       }
     }
   }
@@ -368,7 +413,7 @@ func GenerateMap(hFreq, mFreq float64, width, height, numCPUs int) {
   hNoise := opensimplex.NewWithSeed(hSeed)
   mNoise := opensimplex.NewWithSeed(mSeed)
 
-  world := CreateWorld(width, height, hFreq, mFreq)
+  world := CreateWorld(width, height, hFreq, mFreq, 10)
 
   start := time.Now()
 
