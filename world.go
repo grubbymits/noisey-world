@@ -19,6 +19,7 @@ import "github.com/ojrac/opensimplex-go"
 
 const (
   OCEAN = iota
+  RIVER
   BEACH
   SCORCHED
   BARE
@@ -36,7 +37,7 @@ const (
 )
 
 const WATER_LEVEL = -0.4
-const WATER_SATURATION = 1
+const WATER_SATURATION = 2
 
 func biome(h, m float64) uint8 {
   if (h < WATER_LEVEL) {
@@ -241,9 +242,7 @@ func (w World) AddRivers() {
     }
   }
 
-  // On the second pass, the amount of water passed to the successors isn't
-  // based upon the gradient but the amount of water. The water is distributed
-  // to try to even the flow.
+  // Second pass down
   queue = make([]*Location, len(w.peaks))
   i = 0
   for loc, _ := range w.peaks {
@@ -260,22 +259,22 @@ func (w World) AddRivers() {
     for i := 0; i < loc.numPreds; i++ {
 
       pred := loc.preds[i]
-      totalWater := 0.0
+      totalGradient := 0.0
 
       // Calculate percentage of predecessor's water the successor will
       // receive.
       for j := 0; j < pred.numSuccs; j++ {
         succ := pred.succs[j]
-        totalWater += succ.water
+        totalGradient += math.Abs(pred.height) - math.Abs(succ.height)
       }
 
-      waterRatio := totalWater / loc.water
-      water := waterRatio * (pred.water - WATER_SATURATION)
+      gradientRatio := (math.Abs(pred.height) - math.Abs(loc.height)) / totalGradient
+      water := gradientRatio * pred.water
       loc.water += water
     }
 
-    if loc.water > WATER_SATURATION {
-      w.SetBiome(loc.x, loc.y, OCEAN)
+    if loc.water > WATER_SATURATION && loc.biome != OCEAN {
+      loc.biome = RIVER
     }
 
     // Discover all of the Location's successors and add them to the queue if
@@ -413,7 +412,7 @@ func GenerateMap(hFreq, mFreq float64, width, height, numCPUs int) {
   hNoise := opensimplex.NewWithSeed(hSeed)
   mNoise := opensimplex.NewWithSeed(mSeed)
 
-  world := CreateWorld(width, height, hFreq, mFreq, 10)
+  world := CreateWorld(width, height, hFreq, mFreq, WATER_SATURATION / 2)
 
   start := time.Now()
 
@@ -447,7 +446,8 @@ func GenerateMap(hFreq, mFreq float64, width, height, numCPUs int) {
   fmt.Println("Numer of lakes: ", len(world.lakes));
 
   img := image.NewRGBA(image.Rect(0, 0, width, height))
-  colours := [15]color.RGBA{ { 51, 166, 204, 255 },  // OCEAN
+  colours := [16]color.RGBA{{ 51, 166, 204, 255 },  // OCEAN
+                            { 0, 102, 102, 255 },   // RIVER
                             { 255, 230, 128, 255 }, // BEACH
                             { 153, 153, 102, 255 }, // SCORCHED
                             { 204, 204, 204, 255 }, // BARE
@@ -486,8 +486,8 @@ func GenerateMap(hFreq, mFreq float64, width, height, numCPUs int) {
 }
 
 func main() {
-  width := flag.Int("width", 4000, "map width")
-  height := flag.Int("height", 4000, "map height")
+  width := flag.Int("width", 2880, "map width")
+  height := flag.Int("height", 1800, "map height")
   hFreq := flag.Float64("hfreq", 5, "height noise frequency")
   mFreq := flag.Float64("mfreq", 2, "moisture noise frequency")
   threads := flag.Int("cpus", runtime.NumCPU(), "number of cores to use")
