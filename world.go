@@ -21,69 +21,95 @@ const (
   OCEAN = iota
   RIVER
   BEACH
-  SCORCHED
-  BARE
-  TUNDRA
-  SNOW
-  TEMPERATE_DESERT
+  DRY_ROCK
+  WET_ROCK
+  HEATHLAND
   SHRUBLAND
-  TAIGA
   GRASSLAND
-  TEMPERATE_DECIDUOUS_FOREST
-  TEMPERATE_RAIN_FOREST
-  SUBTROPICAL_DESERT
-  TROPICAL_SEASONAL_FOREST
-  TROPICAL_RAIN_FOREST
+  MOORLAND
+  FENLAND
+  FOREST
+  BIOMES
 )
 
 const WATER_LEVEL = -0.4
-const WATER_SATURATION = 2
+const WATER_SATURATION = 4
+const NO_SOIL = -1.5
+const DRY = -0.5
+const WET = 0
+const VERY_WET = 0.3
+const THICK_SOIL = -0.2
+const HIGHLANDS = 0.3
 
-func biome(h, m float64) uint8 {
+
+func biome(h, m, s float64) uint8 {
+  // Height, Moisture and Soil Depth
+
+  // - bare rock
+  // - lichen rock
+
+  // - grassland: anywhere?
+  // - moorland: high, wet, deep soil
+
+  // - fenland: low, very wet, deep soil
+  // - heathland: low, dry, thin soil
+
+  // - temperate rainforest: low, wet, deep soil
+  // - forest: higher range than rainforst, wet, deep soil
+  // - shrubland: drier with thinner soil than forest, wider range
+
+  // - marshland: saturated water along rivers
+  // - beach
+
   if (h < WATER_LEVEL) {
     return OCEAN
   } else if (h < -0.3) {
     return BEACH
-  } else if (h > 0.7) {
-    if (m < -0.6) {
-      return SCORCHED
-    } else if (m < -0.2) {
-      return BARE
-    } else if (m < 0.2) {
-      return TUNDRA
-    }
-    return SNOW
-  } else if (h > 0.5) {
-    if (m < -0.6) {
-      return TEMPERATE_DESERT
-    } else if (m < -0.2) {
-      return SHRUBLAND
-    }
-    return TAIGA;
-  } else if (h > 0.2) {
-    if (m < -0.6) {
-      return TEMPERATE_DESERT
-    } else if (m < 0) {
-      return GRASSLAND
-    } else if (m < 0.6) {
-      return TEMPERATE_DECIDUOUS_FOREST
-    }
-    return TEMPERATE_RAIN_FOREST
   }
 
-  if (m < -0.8) {
-    return SUBTROPICAL_DESERT
-  } else if (m < -0.2) {
-    return GRASSLAND
-  } else if (m < 0.4) {
-    return TROPICAL_SEASONAL_FOREST
-  } else {
-    return TROPICAL_RAIN_FOREST
+  // No soil
+  if (s < NO_SOIL) {
+    if (m < DRY) {
+      return DRY_ROCK
+    }
+    return WET_ROCK
   }
+
+  // Thin soils
+  if (s < THICK_SOIL) {
+    if (h < HIGHLANDS) {
+      if (m < DRY) {
+        return HEATHLAND
+      }
+      return SHRUBLAND
+    }
+    return GRASSLAND
+  }
+
+  // Thick soils
+  if (h > HIGHLANDS) {
+    if (m > VERY_WET) {
+      return MOORLAND
+    } else if (m > WET) {
+      return FOREST
+    } else if (m > DRY) {
+      return SHRUBLAND
+    }
+    return GRASSLAND
+  }
+
+  if (m > VERY_WET) {
+    return FENLAND
+  } else if (m > WET) {
+    return FOREST
+  } else if (m > DRY) {
+    return SHRUBLAND
+  }
+  return GRASSLAND
 }
 
 type Location struct {
-  height, moisture float64
+  height, moisture, soilDepth float64
   x, y int
   preds, succs [4]*Location
   numPreds, numSuccs int
@@ -107,10 +133,10 @@ type World struct {
   locations []Location
   peaks map[*Location]bool
   lakes map[*Location]bool
-  hFreq, mFreq, water float64
+  hFreq, mFreq, sFreq, water float64
 }
 
-func CreateWorld(width, height int, hFreq, mFreq, water float64) *World {
+func CreateWorld(width, height int, hFreq, mFreq, sFreq, water float64) *World {
   w := new(World)
   w.width = width;
   w.height = height;
@@ -119,6 +145,7 @@ func CreateWorld(width, height int, hFreq, mFreq, water float64) *World {
   w.lakes = make(map[*Location]bool)
   w.hFreq = hFreq
   w.mFreq = mFreq
+  w.sFreq = sFreq
   w.water = water
 
   for y := 0; y < height; y++ {
@@ -151,12 +178,20 @@ func (w World) Height(x, y int) float64 {
   return w.locations[y * w.width + x].height
 }
 
+func (w World) SoilDepth(x, y int) float64 {
+  return w.locations[y * w.width + x].soilDepth
+}
+
 func (w World) Biome(x, y int) uint8 {
   return w.locations[y * w.width + x].biome
 }
 
 func (w World) SetMoisture(x, y int, m float64) {
   w.locations[y * w.width + x].moisture = m
+}
+
+func (w World) SetSoilDepth(x, y int, s float64) {
+  w.locations[y * w.width + x].soilDepth = s
 }
 
 func (w World) SetHeight(x, y int, h float64) {
@@ -289,6 +324,18 @@ func (w World) AddRivers() {
   }
 }
 
+func (w World) AnalyseRegions(c chan int) {
+  // Divide the world into regions and calculate attributes of each region.
+  // If a loc is a 16x16 tile, a region could be 64x64 tiles.
+  // - ratio of ocean
+  // - ratio of beach
+  // - ratio of rivers
+  // - average height
+  // - mean average biome
+  // - number of trees
+  // - number of rocks
+}
+
 func (w World) CalcGradient(c chan int) {
   width := w.width
   height := w.height
@@ -370,20 +417,41 @@ func (world World) CalcHeight(xBegin, xEnd int,
              0.125 * noise.Eval2(8 * freq * xFloat, 8 * freq * yFloat) +
              heightBias * float64(height - y)
 
-      h  = math.Pow(h, float64(1 + (y / height)))
+      //h  = math.Pow(h, float64(1 + (y / height)))
       world.SetHeight(x, y, h)
     }
   }
   c <- 1
 }
 
-func (world World) CalcBiome(xBegin, xEnd int,
-                                  noise *opensimplex.Noise,
-                                  c chan int) {
+func (world World) CalcSoilDepth(xBegin, xEnd int,
+                                 noise *opensimplex.Noise, c chan int) {
+  freq := world.sFreq
+  width := world.width
+  height := world.height
+
+  for y := 0; y < height; y++ {
+    for x := xBegin; x < xEnd; x++ {
+      xFloat := float64(x) / float64(width)
+      yFloat := float64(y) / float64(height)
+      s := 1 * noise.Eval2(freq * xFloat, freq * yFloat) +
+             0.50 * noise.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
+             0.25 * noise.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
+             0.125 * noise.Eval2(8 * freq * xFloat, 8 * freq * yFloat)
+
+      s -= world.Height(x, y)
+      world.SetSoilDepth(x, y, s)
+    }
+  }
+  c <- 1
+}
+
+func (world World) CalcMoisture(xBegin, xEnd int,
+                                noise *opensimplex.Noise,
+                                c chan int) {
   freq := world.mFreq
   width := world.width
   height := world.height
-  //tempBias := 1 / height
 
   for y := 0; y < height; y++ {
     for x := xBegin; x < xEnd; x++ {
@@ -394,25 +462,37 @@ func (world World) CalcBiome(xBegin, xEnd int,
              0.25 * noise.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
              0.125 * noise.Eval2(8 * freq * xFloat, 8 * freq * yFloat)
 
-      //m = math.Pow(m, tempBias * float64(y))
       world.SetMoisture(x, y, m)
-      world.SetBiome(x, y, biome(world.Height(x, y), m))
-      //world.CalcGradient(x, y)
     }
   }
   c <- 1
 }
 
-func GenerateMap(hFreq, mFreq float64, width, height, numCPUs int) {
+func (world World) CalcBiome(xBegin, xEnd int, c chan int) {
+  height := world.height
+
+  for y := 0; y < height; y++ {
+    for x := xBegin; x < xEnd; x++ {
+      world.SetBiome(x, y, biome(world.Height(x, y), world.Moisture(x, y),
+                                 world.SoilDepth(x, y)))
+    }
+  }
+  c <-1 
+}
+
+func GenerateMap(hFreq, mFreq, sFreq float64, width, height, numCPUs int) {
   rand.Seed(time.Now().UTC().UnixNano())
   hSeed := rand.Int63()
   mSeed := rand.Int63()
+  sSeed := rand.Int63()
   fmt.Println("height seed:", hSeed)
   fmt.Println("moisture seed:", mSeed)
+  fmt.Println("soil seed:", sSeed)
   hNoise := opensimplex.NewWithSeed(hSeed)
   mNoise := opensimplex.NewWithSeed(mSeed)
+  sNoise := opensimplex.NewWithSeed(sSeed)
 
-  world := CreateWorld(width, height, hFreq, mFreq, WATER_SATURATION / 2)
+  world := CreateWorld(width, height, hFreq, mFreq, sFreq, 1.5)//WATER_SATURATION / 2)
 
   start := time.Now()
 
@@ -428,15 +508,26 @@ func GenerateMap(hFreq, mFreq float64, width, height, numCPUs int) {
     <-c
   }
 
-  c = make(chan int, numCPUs + 1)
+  c = make(chan int, 2*numCPUs + 1)
   go world.CalcGradient(c);
 
   for i := 0; i < numCPUs; i++ {
-    go world.CalcBiome(i * width / numCPUs,
+    go world.CalcMoisture(i * width / numCPUs,
                           (i + 1) * width / numCPUs,
                           mNoise, c)
+    go world.CalcSoilDepth(i * width / numCPUs,
+                           (i + 1) * width / numCPUs,
+                           sNoise, c)
   }
-  for i := 0; i < numCPUs + 1; i++ {
+  for i := 0; i < 2*numCPUs + 1; i++ {
+    <-c
+  }
+  c = make(chan int, numCPUs)
+  for i := 0; i < numCPUs; i++ {
+    go world.CalcBiome(i * width / numCPUs,
+                       (i + 1) * width / numCPUs, c)
+  }
+  for i := 0; i < numCPUs; i++ {
     <-c
   }
   world.AddRivers()
@@ -446,22 +537,17 @@ func GenerateMap(hFreq, mFreq float64, width, height, numCPUs int) {
   fmt.Println("Numer of lakes: ", len(world.lakes));
 
   img := image.NewRGBA(image.Rect(0, 0, width, height))
-  colours := [16]color.RGBA{{ 51, 166, 204, 255 },  // OCEAN
-                            { 0, 102, 102, 255 },   // RIVER
-                            { 255, 230, 128, 255 }, // BEACH
-                            { 153, 153, 102, 255 }, // SCORCHED
-                            { 204, 204, 204, 255 }, // BARE
-                            { 230, 184, 0, 255 },  // TUNDRA
-                            { 230, 230, 230, 255 }, // SNOW
-                            { 170, 190, 50, 255 },  // TEMPERATURE_DESERT
-                            { 166, 204, 51, 255 },  // SHRUBLAND
-                            { 51, 153, 77, 255 },   // TAIGA
-                            { 128, 153, 51, 255 },  // GRASSLAND
-                            { 96, 159, 96, 255 },   // TEMPERATE_DECID
-                            { 77, 153, 0, 255 },    // TEMPERATE_RAIN
-                            { 255, 230, 128, 255 }, // SUBTROPICAL_DESERT
-                            { 102, 153, 0, 255 },   // TROPICAL_SEASONAL
-                            { 85, 128, 0, 255 } }    // TROPICAL_RAIN
+  colours := [BIOMES]color.RGBA{{ 51, 166, 204, 255 },  // OCEAN
+                                { 0, 102, 102, 255 },   // RIVER
+                                { 255, 230, 128, 255 }, // BEACH
+                                { 204, 204, 204, 255 }, // DRY_ROCK
+                                { 166, 166, 166, 255 }, // WET_ROCK
+                                { 202, 218, 114, 255 }, // HEATHLAND
+                                { 170, 190, 50, 255 },  // SHRUBLAND
+                                { 128, 153, 51, 255 },  // GRASSLAND
+                                { 217, 179, 255, 255 }, // MOORLAND
+                                { 85, 128, 0, 255 },    // FENLAND
+                                { 77, 153, 0, 255 } }   // FOREST
 
   bounds := img.Bounds()
   for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
@@ -471,7 +557,8 @@ func GenerateMap(hFreq, mFreq float64, width, height, numCPUs int) {
   }
 
   filename := "h" + strconv.FormatInt(hSeed, 10) + "-" +
-              "m" + strconv.FormatInt(mSeed, 10) + ".png"
+              "m" + strconv.FormatInt(mSeed, 10) + "-" +
+              "s" + strconv.FormatInt(sSeed, 10) + ".png"
   imgFile, err := os.Create(filename)
   if err != nil {
     log.Fatal(err)
@@ -490,11 +577,12 @@ func main() {
   height := flag.Int("height", 1800, "map height")
   hFreq := flag.Float64("hfreq", 5, "height noise frequency")
   mFreq := flag.Float64("mfreq", 2, "moisture noise frequency")
+  sFreq := flag.Float64("sfreq", 20, "soil depth noise frequency")
   threads := flag.Int("cpus", runtime.NumCPU(), "number of cores to use")
 
   flag.Parse()
 
   fmt.Println("width, height, threads")
   fmt.Println(*width, ",", *height, ",", *threads)
-  GenerateMap(*hFreq, *mFreq, *width, *height, *threads)
+  GenerateMap(*hFreq, *mFreq, *sFreq, *width, *height, *threads)
 }
