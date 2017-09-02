@@ -22,12 +22,13 @@ const (
   RIVER
   BEACH
   DRY_ROCK
-  WET_ROCK
+  MOIST_ROCK
   HEATHLAND
   SHRUBLAND
   GRASSLAND
   MOORLAND
   FENLAND
+  WOODLAND
   FOREST
   BIOMES
 )
@@ -36,10 +37,12 @@ const WATER_LEVEL = -0.4
 const WATER_SATURATION = 4
 const NO_SOIL = -1.5
 const DRY = -0.5
-const WET = 0
-const VERY_WET = 0.3
+const MOIST = 0
+const WET = 0.3
 const THICK_SOIL = -0.2
-const HIGHLANDS = 0.3
+const SHALLOW_SOIL = -0.7
+const HIGHLANDS = 0.5
+const MIDLANDS = 0
 
 
 func biome(h, m, s float64) uint8 {
@@ -72,40 +75,76 @@ func biome(h, m, s float64) uint8 {
     if (m < DRY) {
       return DRY_ROCK
     }
-    return WET_ROCK
+    return MOIST_ROCK
   }
 
-  // Thin soils
-  if (s < THICK_SOIL) {
-    if (h < HIGHLANDS) {
-      if (m < DRY) {
-        return HEATHLAND
+  if h > HIGHLANDS {
+    if s > THICK_SOIL {
+      if m > WET {
+        return MOORLAND
+      } else if m > MOIST {
+        return SHRUBLAND
+      } else {
+        return GRASSLAND
       }
-      return SHRUBLAND
+    } else if s > SHALLOW_SOIL {
+      if m > WET {
+        return WOODLAND
+      } else if m > MOIST {
+        return SHRUBLAND
+      } else {
+        return GRASSLAND
+      }
+    } else {
+      return GRASSLAND
     }
-    return GRASSLAND
-  }
-
-  // Thick soils
-  if (h > HIGHLANDS) {
-    if (m > VERY_WET) {
-      return MOORLAND
-    } else if (m > WET) {
+  } else if h > MIDLANDS {
+    if s > THICK_SOIL {
+      if m > WET {
+        return FOREST
+      } else if m > MOIST {
+        return WOODLAND
+      } else {
+        return SHRUBLAND
+      }
+    } else if s > SHALLOW_SOIL {
+      if m > WET {
+        return WOODLAND
+      } else if m > MOIST {
+        return SHRUBLAND
+      } else {
+        return GRASSLAND
+      }
+    } else if m > WET {
+      return SHRUBLAND
+    } else {
+      return GRASSLAND
+    }
+  } else if s > THICK_SOIL {  // lowlands
+    if m > WET {
+      return FENLAND
+    } else if m > MOIST {
       return FOREST
-    } else if (m > DRY) {
-      return SHRUBLAND
+    } else {
+      return WOODLAND
     }
-    return GRASSLAND
+  } else if s > SHALLOW_SOIL {
+    if m > WET {
+      return WOODLAND
+    } else if m > MOIST {
+      return SHRUBLAND
+    } else {
+      return HEATHLAND
+    }
+  } else {
+    if m > WET {
+      return SHRUBLAND
+    } else if m > MOIST {
+      return GRASSLAND
+    } else {
+      return HEATHLAND
+    }
   }
-
-  if (m > VERY_WET) {
-    return FENLAND
-  } else if (m > WET) {
-    return FOREST
-  } else if (m > DRY) {
-    return SHRUBLAND
-  }
-  return GRASSLAND
 }
 
 type Location struct {
@@ -541,12 +580,13 @@ func GenerateMap(hFreq, mFreq, sFreq float64, width, height, numCPUs int) {
                                 { 0, 102, 102, 255 },   // RIVER
                                 { 255, 230, 128, 255 }, // BEACH
                                 { 204, 204, 204, 255 }, // DRY_ROCK
-                                { 166, 166, 166, 255 }, // WET_ROCK
+                                { 166, 166, 166, 255 }, // MOIST_ROCK
                                 { 202, 218, 114, 255 }, // HEATHLAND
-                                { 170, 190, 50, 255 },  // SHRUBLAND
-                                { 128, 153, 51, 255 },  // GRASSLAND
+                                { 128, 153, 51, 255 },  // SHRUBLAND
+                                { 170, 190, 50, 255 },  // GRASSLAND
                                 { 217, 179, 255, 255 }, // MOORLAND
                                 { 85, 128, 0, 255 },    // FENLAND
+                                { 119, 179, 0, 255 },   // WOODLAND
                                 { 77, 153, 0, 255 } }   // FOREST
 
   bounds := img.Bounds()
