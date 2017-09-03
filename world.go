@@ -1,6 +1,7 @@
 package main
 
 import (
+  "container/heap"
   "flag"
   "fmt"
   "image"
@@ -17,21 +18,22 @@ import (
 
 import "github.com/ojrac/opensimplex-go"
 
-const (
-  OCEAN = iota
-  RIVER
-  BEACH
-  DRY_ROCK
-  MOIST_ROCK
-  HEATHLAND
-  SHRUBLAND
-  GRASSLAND
-  MOORLAND
-  FENLAND
-  WOODLAND
-  FOREST
-  BIOMES
-)
+const REGION_SIZE = 64
+const REGION_AREA = REGION_SIZE * REGION_SIZE
+var TREE_DENSITY = [...]int {
+  0,  // OCEAN
+  0,  // RIVER
+  REGION_SIZE / 1024,  // BEACH
+  REGION_AREA / 512,  // DRY_ROCK
+  REGION_AREA / 256,  // MOIST_ROCK
+  REGION_AREA / 96,   // HEATHLAND
+  REGION_AREA / 64,   // SHRUBLAND
+  REGION_AREA / 128,  // GRASSLAND
+  REGION_AREA / 128,  // MOORLAND
+  REGION_AREA / 128,  // FENLAND
+  REGION_AREA / 32,   // WOODLAND
+  REGION_AREA / 16,   // FOREST
+}
 
 const WATER_LEVEL = -0.4
 const WATER_SATURATION = 4
@@ -44,147 +46,27 @@ const SHALLOW_SOIL = -0.7
 const HIGHLANDS = 0.5
 const MIDLANDS = 0
 
-
-func biome(h, m, s float64) uint8 {
-  // Height, Moisture and Soil Depth
-
-  // - bare rock
-  // - lichen rock
-
-  // - grassland: anywhere?
-  // - moorland: high, wet, deep soil
-
-  // - fenland: low, very wet, deep soil
-  // - heathland: low, dry, thin soil
-
-  // - temperate rainforest: low, wet, deep soil
-  // - forest: higher range than rainforst, wet, deep soil
-  // - shrubland: drier with thinner soil than forest, wider range
-
-  // - marshland: saturated water along rivers
-  // - beach
-
-  if (h < WATER_LEVEL) {
-    return OCEAN
-  } else if (h < -0.3) {
-    return BEACH
-  }
-
-  // No soil
-  if (s < NO_SOIL) {
-    if (m < DRY) {
-      return DRY_ROCK
-    }
-    return MOIST_ROCK
-  }
-
-  if h > HIGHLANDS {
-    if s > THICK_SOIL {
-      if m > WET {
-        return MOORLAND
-      } else if m > MOIST {
-        return SHRUBLAND
-      } else {
-        return GRASSLAND
-      }
-    } else if s > SHALLOW_SOIL {
-      if m > WET {
-        return WOODLAND
-      } else if m > MOIST {
-        return SHRUBLAND
-      } else {
-        return GRASSLAND
-      }
-    } else {
-      return GRASSLAND
-    }
-  } else if h > MIDLANDS {
-    if s > THICK_SOIL {
-      if m > WET {
-        return FOREST
-      } else if m > MOIST {
-        return WOODLAND
-      } else {
-        return SHRUBLAND
-      }
-    } else if s > SHALLOW_SOIL {
-      if m > WET {
-        return WOODLAND
-      } else if m > MOIST {
-        return SHRUBLAND
-      } else {
-        return GRASSLAND
-      }
-    } else if m > WET {
-      return SHRUBLAND
-    } else {
-      return GRASSLAND
-    }
-  } else if s > THICK_SOIL {  // lowlands
-    if m > WET {
-      return FENLAND
-    } else if m > MOIST {
-      return FOREST
-    } else {
-      return WOODLAND
-    }
-  } else if s > SHALLOW_SOIL {
-    if m > WET {
-      return WOODLAND
-    } else if m > MOIST {
-      return SHRUBLAND
-    } else {
-      return HEATHLAND
-    }
-  } else {
-    if m > WET {
-      return SHRUBLAND
-    } else if m > MOIST {
-      return GRASSLAND
-    } else {
-      return HEATHLAND
-    }
-  }
-}
-
-type Location struct {
-  height, moisture, soilDepth float64
-  x, y int
-  preds, succs [4]*Location
-  numPreds, numSuccs int
-  discovered, weight int
-  water float64
-  biome uint8
-}
-
-func (l *Location) addSuccessor(other *Location) {
-  l.succs[l.numSuccs] = other
-  l.numSuccs++
-}
-
-func (l *Location) addPredecessor(other *Location) {
-  l.preds[l.numPreds] = other
-  l.numPreds = l.numPreds + 1
-}
-
 type World struct {
   width, height int
   locations []Location
+  regions []Location
   peaks map[*Location]bool
   lakes map[*Location]bool
-  hFreq, mFreq, sFreq, water float64
+  hFreq, mFreq, sFreq, fFreq, water float64
 }
 
-func CreateWorld(width, height int, hFreq, mFreq, sFreq, water float64) *World {
+func CreateWorld(width, height int, hFreq, mFreq, sFreq, fFreq, water float64) *World {
   w := new(World)
   w.width = width;
   w.height = height;
   w.locations = make([]Location, width * height)
+  w.regions = make([]Location, width * height / REGION_AREA)
   w.peaks = make(map[*Location]bool)
   w.lakes = make(map[*Location]bool)
   w.hFreq = hFreq
   w.mFreq = mFreq
   w.sFreq = sFreq
+  w.fFreq = fFreq
   w.water = water
 
   for y := 0; y < height; y++ {
@@ -205,8 +87,22 @@ func (w World) addLake(l *Location) {
   w.lakes[l] = true
 }
 
+func (w World) addFeature(x, y int, feature uint8) {
+  w.locations[y * w.width + x].feature = feature
+}
+
+func (w World) Feature(x, y int) uint8 {
+  return w.locations[y * w.width + x].feature
+}
+
 func (w World) Location(x, y int) *Location {
   return &w.locations[y * w.width + x]
+}
+
+func (w World) Region(x, y int) *Location {
+  rx := x % REGION_SIZE
+  ry := y % REGION_SIZE
+  return &w.regions[ry * w.width / REGION_SIZE + rx]
 }
 
 func (w World) Moisture(x, y int) float64 {
@@ -221,6 +117,10 @@ func (w World) SoilDepth(x, y int) float64 {
   return w.locations[y * w.width + x].soilDepth
 }
 
+func (w World) Foliage(x, y int) float64 {
+  return w.locations[y * w.width + x].foliage
+}
+
 func (w World) Biome(x, y int) uint8 {
   return w.locations[y * w.width + x].biome
 }
@@ -231,6 +131,10 @@ func (w World) SetMoisture(x, y int, m float64) {
 
 func (w World) SetSoilDepth(x, y int, s float64) {
   w.locations[y * w.width + x].soilDepth = s
+}
+
+func (w World) SetFoliage(x, y int, f float64) {
+  w.locations[y * w.width + x].foliage = f
 }
 
 func (w World) SetHeight(x, y int, h float64) {
@@ -363,16 +267,58 @@ func (w World) AddRivers() {
   }
 }
 
-func (w World) AnalyseRegions(c chan int) {
+func (w World) AnalyseRegions(xBegin, xEnd int, c chan int) {
   // Divide the world into regions and calculate attributes of each region.
   // If a loc is a 16x16 tile, a region could be 64x64 tiles.
   // - ratio of ocean
   // - ratio of beach
   // - ratio of rivers
   // - average height
-  // - mean average biome
+  // - most often occurring biome
   // - number of trees
   // - number of rocks
+  // For each region, use the most often occuring biome to choose the number of
+  // trees for that region. Iterate through the locations put them into a max
+  // heap. Once all the locations have been visited, sort the heap and pop off
+  // the required number of locations for each tree.
+  for y := 0; y < w.height; y += REGION_SIZE {
+    for x := xBegin; x < xEnd; x += REGION_SIZE {
+      biomeCount := [BIOMES]int{0}
+      lmh := make(LocMaxHeap, REGION_AREA)
+
+      i := 0
+      for ry := y; ry < y + REGION_SIZE; ry++ {
+        for rx := x; rx < x + REGION_SIZE; rx++ {
+          foliage := 0.0
+          biome := w.Biome(rx, ry)
+          biomeCount[biome]++
+          if biome != OCEAN && biome != BEACH && biome != RIVER {
+            foliage = w.Foliage(rx, ry)
+          }
+          lmh[i] = &LocVal{ i, rx, ry, foliage }
+          i++
+        }
+      }
+      heap.Init(&lmh)
+
+      maxCount := 0
+      maxBiome := 0
+      region := w.Region(x, y)
+      for i := 0; i < len(biomeCount); i++ {
+        if biomeCount[i] > maxCount {
+          maxBiome = i
+          maxCount = biomeCount[i]
+        }
+      }
+      region.biome = uint8(maxBiome)
+
+      for i := 0; i < TREE_DENSITY[maxBiome]; i++ {
+        locVal := heap.Pop(&lmh).(*LocVal)
+        w.addFeature(locVal.x, locVal.y, TREE);
+      }
+    }
+  }
+  c <- 1
 }
 
 func (w World) CalcGradient(c chan int) {
@@ -485,12 +431,12 @@ func (world World) CalcSoilDepth(xBegin, xEnd int,
   c <- 1
 }
 
-func (world World) CalcMoisture(xBegin, xEnd int,
+func (w World) CalcMoisture(xBegin, xEnd int,
                                 noise *opensimplex.Noise,
                                 c chan int) {
-  freq := world.mFreq
-  width := world.width
-  height := world.height
+  freq := w.mFreq
+  width := w.width
+  height := w.height
 
   for y := 0; y < height; y++ {
     for x := xBegin; x < xEnd; x++ {
@@ -501,37 +447,61 @@ func (world World) CalcMoisture(xBegin, xEnd int,
              0.25 * noise.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
              0.125 * noise.Eval2(8 * freq * xFloat, 8 * freq * yFloat)
 
-      world.SetMoisture(x, y, m)
+      w.SetMoisture(x, y, m)
     }
   }
   c <- 1
 }
 
-func (world World) CalcBiome(xBegin, xEnd int, c chan int) {
-  height := world.height
+func (w World) CalcBiome(xBegin, xEnd int, c chan int) {
+  height := w.height
 
   for y := 0; y < height; y++ {
     for x := xBegin; x < xEnd; x++ {
-      world.SetBiome(x, y, biome(world.Height(x, y), world.Moisture(x, y),
-                                 world.SoilDepth(x, y)))
+      w.SetBiome(x, y, biome(w.Height(x, y), w.Moisture(x, y),
+                 w.SoilDepth(x, y)))
     }
   }
   c <-1 
 }
 
-func GenerateMap(hFreq, mFreq, sFreq float64, width, height, numCPUs int) {
+func (w World) CalcFoliage(xBegin, xEnd int,
+                           noise *opensimplex.Noise, c chan int) {
+  freq := w.fFreq
+  width := w.width
+  height := w.height
+
+  for y := 0; y < height; y++ {
+    for x := xBegin; x < xEnd; x++ {
+      xFloat := float64(x) / float64(width)
+      yFloat := float64(y) / float64(height)
+      f := 1 * noise.Eval2(freq * xFloat, freq * yFloat) +
+             0.50 * noise.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
+             0.25 * noise.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
+             0.125 * noise.Eval2(8 * freq * xFloat, 8 * freq * yFloat)
+
+      w.SetFoliage(x, y, f)
+    }
+  }
+  c <- 1
+}
+
+func GenerateMap(hFreq, mFreq, sFreq, fFreq float64, width, height, numCPUs int) {
   rand.Seed(time.Now().UTC().UnixNano())
   hSeed := rand.Int63()
   mSeed := rand.Int63()
   sSeed := rand.Int63()
+  fSeed := rand.Int63()
   fmt.Println("height seed:", hSeed)
   fmt.Println("moisture seed:", mSeed)
   fmt.Println("soil seed:", sSeed)
+  fmt.Println("foliage seed:", fSeed)
   hNoise := opensimplex.NewWithSeed(hSeed)
   mNoise := opensimplex.NewWithSeed(mSeed)
   sNoise := opensimplex.NewWithSeed(sSeed)
+  fNoise := opensimplex.NewWithSeed(fSeed)
 
-  world := CreateWorld(width, height, hFreq, mFreq, sFreq, 1.5)//WATER_SATURATION / 2)
+  world := CreateWorld(width, height, hFreq, mFreq, sFreq, fFreq, 1.5)
 
   start := time.Now()
 
@@ -547,7 +517,7 @@ func GenerateMap(hFreq, mFreq, sFreq float64, width, height, numCPUs int) {
     <-c
   }
 
-  c = make(chan int, 2*numCPUs + 1)
+  c = make(chan int, 3*numCPUs + 1)
   go world.CalcGradient(c);
 
   for i := 0; i < numCPUs; i++ {
@@ -557,10 +527,14 @@ func GenerateMap(hFreq, mFreq, sFreq float64, width, height, numCPUs int) {
     go world.CalcSoilDepth(i * width / numCPUs,
                            (i + 1) * width / numCPUs,
                            sNoise, c)
+    go world.CalcFoliage(i * width / numCPUs,
+                         (i + 1) * width / numCPUs,
+                         fNoise, c)
   }
-  for i := 0; i < 2*numCPUs + 1; i++ {
+  for i := 0; i < 3*numCPUs + 1; i++ {
     <-c
   }
+
   c = make(chan int, numCPUs)
   for i := 0; i < numCPUs; i++ {
     go world.CalcBiome(i * width / numCPUs,
@@ -569,7 +543,18 @@ func GenerateMap(hFreq, mFreq, sFreq float64, width, height, numCPUs int) {
   for i := 0; i < numCPUs; i++ {
     <-c
   }
+
   world.AddRivers()
+
+  c = make(chan int, numCPUs)
+  for i := 0; i < numCPUs; i++ {
+    go world.AnalyseRegions(i * width / numCPUs,
+                            (i + 1) * width / numCPUs, c)
+  }
+  for i := 0; i < numCPUs; i++ {
+    <-c
+  }
+  c = make(chan int, numCPUs)
 
   fmt.Println("Duration: ", time.Now().Sub(start));
   fmt.Println("Number of peaks: ", len(world.peaks));
@@ -592,7 +577,11 @@ func GenerateMap(hFreq, mFreq, sFreq float64, width, height, numCPUs int) {
   bounds := img.Bounds()
   for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
     for x := bounds.Min.X; x < bounds.Max.X; x++ {
-      img.Set(x, y, colours[world.Biome(x, y)])
+      if (world.Feature(x, y) != EMPTY) {
+        img.Set(x, y, color.RGBA{38, 77, 0, 255})
+      } else {
+        img.Set(x, y, colours[world.Biome(x, y)])
+      }
     }
   }
 
@@ -613,16 +602,25 @@ func GenerateMap(hFreq, mFreq, sFreq float64, width, height, numCPUs int) {
 }
 
 func main() {
-  width := flag.Int("width", 2880, "map width")
-  height := flag.Int("height", 1800, "map height")
-  hFreq := flag.Float64("hfreq", 5, "height noise frequency")
-  mFreq := flag.Float64("mfreq", 2, "moisture noise frequency")
-  sFreq := flag.Float64("sfreq", 20, "soil depth noise frequency")
+  width := flag.Int("width", 2304, "map width")
+  height := flag.Int("height", 1536, "map height")
+  hFreq := flag.Float64("hFreq", 5, "height noise frequency")
+  mFreq := flag.Float64("mFreq", 2, "moisture noise frequency")
+  sFreq := flag.Float64("sFreq", 20, "soil depth noise frequency")
+  fFreq := flag.Float64("fFreq", 200, "foliage noise frequency")
   threads := flag.Int("cpus", runtime.NumCPU(), "number of cores to use")
 
   flag.Parse()
 
+  if *width % REGION_SIZE != 0 {
+    fmt.Println("width needs to be a factor of", REGION_SIZE)
+    return
+  } else if *height % REGION_SIZE != 0 {
+    fmt.Println("height needs to be a factor of", REGION_SIZE)
+    return
+  }
+
   fmt.Println("width, height, threads")
   fmt.Println(*width, ",", *height, ",", *threads)
-  GenerateMap(*hFreq, *mFreq, *sFreq, *width, *height, *threads)
+  GenerateMap(*hFreq, *mFreq, *sFreq, *fFreq, *width, *height, *threads)
 }
