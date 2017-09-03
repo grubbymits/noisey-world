@@ -647,9 +647,11 @@ func GenerateMap(hFreq, mFreq, sFreq, fFreq, rFreq float64,
     }
   }
 
-  filename := "h" + strconv.FormatInt(hSeed, 10) + "-" +
-              "m" + strconv.FormatInt(mSeed, 10) + "-" +
-              "s" + strconv.FormatInt(sSeed, 10) + ".png"
+  filename := "h" + strconv.FormatInt(hSeed, 16) + "-" +
+              "m" + strconv.FormatInt(mSeed, 16) + "-" +
+              "s" + strconv.FormatInt(sSeed, 16) + "-" +
+              "f" + strconv.FormatInt(fSeed, 16) + "-" +
+              "r" + strconv.FormatInt(rSeed, 16) + ".png"
   imgFile, err := os.Create(filename)
   if err != nil {
     log.Fatal(err)

@@ -41,15 +41,15 @@ func biome(h, m, s float64) uint8 {
   // - marshland: saturated water along rivers
   // - beach
 
-  if (h < WATER_LEVEL) {
+  if h < WATER_LEVEL {
     return OCEAN
-  } else if (h < -0.3) {
+  } else if h < WATER_LEVEL + 0.05 {
     return BEACH
   }
 
   // No soil
-  if (s < NO_SOIL) {
-    if (m < DRY) {
+  if s < NO_SOIL {
+    if m < DRY {
       return DRY_ROCK
     }
     return MOIST_ROCK
