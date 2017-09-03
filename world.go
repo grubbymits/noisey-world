@@ -35,6 +35,21 @@ var TREE_DENSITY = [...]int {
   REGION_AREA / 16,   // FOREST
 }
 
+var ROCK_DENSITY = [...]int {
+  REGION_SIZE / 32,   // OCEAN
+  REGION_SIZE / 32,   // RIVER
+  REGION_SIZE / 32,   // BEACH
+  REGION_AREA / 16,   // DRY_ROCK
+  REGION_AREA / 16,   // MOIST_ROCK
+  REGION_AREA / 1024, // HEATHLAND
+  REGION_AREA / 512,  // SHRUBLAND
+  REGION_AREA / 256,  // GRASSLAND
+  REGION_AREA / 256,  // MOORLAND
+  REGION_AREA / 1024, // FENLAND
+  REGION_AREA / 512,  // WOODLAND
+  REGION_AREA / 512,  // FOREST
+}
+
 const WATER_LEVEL = -0.4
 const WATER_SATURATION = 4
 const NO_SOIL = -1.5
@@ -52,10 +67,11 @@ type World struct {
   regions []Location
   peaks map[*Location]bool
   lakes map[*Location]bool
-  hFreq, mFreq, sFreq, fFreq, water float64
+  hFreq, mFreq, sFreq, fFreq, rFreq, water float64
 }
 
-func CreateWorld(width, height int, hFreq, mFreq, sFreq, fFreq, water float64) *World {
+func CreateWorld(width, height int, hFreq, mFreq, sFreq, fFreq, rFreq,
+                 water float64) *World {
   w := new(World)
   w.width = width;
   w.height = height;
@@ -67,6 +83,7 @@ func CreateWorld(width, height int, hFreq, mFreq, sFreq, fFreq, water float64) *
   w.mFreq = mFreq
   w.sFreq = sFreq
   w.fFreq = fFreq
+  w.rFreq = rFreq
   w.water = water
 
   for y := 0; y < height; y++ {
@@ -121,6 +138,10 @@ func (w World) Foliage(x, y int) float64 {
   return w.locations[y * w.width + x].foliage
 }
 
+func (w World) Rock(x, y int) float64 {
+  return w.locations[y * w.width + x].rock
+}
+
 func (w World) Biome(x, y int) uint8 {
   return w.locations[y * w.width + x].biome
 }
@@ -135,6 +156,10 @@ func (w World) SetSoilDepth(x, y int, s float64) {
 
 func (w World) SetFoliage(x, y int, f float64) {
   w.locations[y * w.width + x].foliage = f
+}
+
+func (w World) SetRock(x, y int, r float64) {
+  w.locations[y * w.width + x].rock = r
 }
 
 func (w World) SetHeight(x, y int, h float64) {
@@ -284,7 +309,8 @@ func (w World) AnalyseRegions(xBegin, xEnd int, c chan int) {
   for y := 0; y < w.height; y += REGION_SIZE {
     for x := xBegin; x < xEnd; x += REGION_SIZE {
       biomeCount := [BIOMES]int{0}
-      lmh := make(LocMaxHeap, REGION_AREA)
+      treeHeap := make(LocMaxHeap, REGION_AREA)
+      rockHeap := make(LocMaxHeap, REGION_AREA)
 
       i := 0
       for ry := y; ry < y + REGION_SIZE; ry++ {
@@ -295,11 +321,13 @@ func (w World) AnalyseRegions(xBegin, xEnd int, c chan int) {
           if biome != OCEAN && biome != BEACH && biome != RIVER {
             foliage = w.Foliage(rx, ry)
           }
-          lmh[i] = &LocVal{ i, rx, ry, foliage }
+          treeHeap[i] = &LocVal{ i, rx, ry, foliage }
+          rockHeap[i] = &LocVal{ i, rx, ry, w.Rock(rx, ry) }
           i++
         }
       }
-      heap.Init(&lmh)
+      heap.Init(&treeHeap)
+      heap.Init(&rockHeap)
 
       maxCount := 0
       maxBiome := 0
@@ -313,8 +341,12 @@ func (w World) AnalyseRegions(xBegin, xEnd int, c chan int) {
       region.biome = uint8(maxBiome)
 
       for i := 0; i < TREE_DENSITY[maxBiome]; i++ {
-        locVal := heap.Pop(&lmh).(*LocVal)
+        locVal := heap.Pop(&treeHeap).(*LocVal)
         w.addFeature(locVal.x, locVal.y, TREE);
+      }
+      for i := 0; i < ROCK_DENSITY[maxBiome]; i++ {
+        locVal := heap.Pop(&rockHeap).(*LocVal)
+        w.addFeature(locVal.x, locVal.y, ROCK);
       }
     }
   }
@@ -486,22 +518,47 @@ func (w World) CalcFoliage(xBegin, xEnd int,
   c <- 1
 }
 
-func GenerateMap(hFreq, mFreq, sFreq, fFreq float64, width, height, numCPUs int) {
+func (w World) CalcRock(xBegin, xEnd int,
+                        noise *opensimplex.Noise, c chan int) {
+  freq := w.rFreq
+  width := w.width
+  height := w.height
+
+  for y := 0; y < height; y++ {
+    for x := xBegin; x < xEnd; x++ {
+      xFloat := float64(x) / float64(width)
+      yFloat := float64(y) / float64(height)
+      r := 1 * noise.Eval2(freq * xFloat, freq * yFloat) +
+             0.50 * noise.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
+             0.25 * noise.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
+             0.125 * noise.Eval2(8 * freq * xFloat, 8 * freq * yFloat)
+
+      w.SetRock(x, y, r)
+    }
+  }
+  c <- 1
+}
+
+func GenerateMap(hFreq, mFreq, sFreq, fFreq, rFreq float64,
+                 width, height, numCPUs int) {
   rand.Seed(time.Now().UTC().UnixNano())
   hSeed := rand.Int63()
   mSeed := rand.Int63()
   sSeed := rand.Int63()
   fSeed := rand.Int63()
+  rSeed := rand.Int63()
   fmt.Println("height seed:", hSeed)
   fmt.Println("moisture seed:", mSeed)
   fmt.Println("soil seed:", sSeed)
   fmt.Println("foliage seed:", fSeed)
+  fmt.Println("rock seed:", rSeed)
   hNoise := opensimplex.NewWithSeed(hSeed)
   mNoise := opensimplex.NewWithSeed(mSeed)
   sNoise := opensimplex.NewWithSeed(sSeed)
   fNoise := opensimplex.NewWithSeed(fSeed)
+  rNoise := opensimplex.NewWithSeed(rSeed)
 
-  world := CreateWorld(width, height, hFreq, mFreq, sFreq, fFreq, 1.5)
+  world := CreateWorld(width, height, hFreq, mFreq, sFreq, fFreq, rFreq, 1.5)
 
   start := time.Now()
 
@@ -517,7 +574,7 @@ func GenerateMap(hFreq, mFreq, sFreq, fFreq float64, width, height, numCPUs int)
     <-c
   }
 
-  c = make(chan int, 3*numCPUs + 1)
+  c = make(chan int, 4*numCPUs + 1)
   go world.CalcGradient(c);
 
   for i := 0; i < numCPUs; i++ {
@@ -530,8 +587,11 @@ func GenerateMap(hFreq, mFreq, sFreq, fFreq float64, width, height, numCPUs int)
     go world.CalcFoliage(i * width / numCPUs,
                          (i + 1) * width / numCPUs,
                          fNoise, c)
+    go world.CalcRock(i * width / numCPUs,
+                         (i + 1) * width / numCPUs,
+                         rNoise, c)
   }
-  for i := 0; i < 3*numCPUs + 1; i++ {
+  for i := 0; i < 4*numCPUs + 1; i++ {
     <-c
   }
 
@@ -577,8 +637,10 @@ func GenerateMap(hFreq, mFreq, sFreq, fFreq float64, width, height, numCPUs int)
   bounds := img.Bounds()
   for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
     for x := bounds.Min.X; x < bounds.Max.X; x++ {
-      if (world.Feature(x, y) != EMPTY) {
+      if world.Feature(x, y) == TREE {
         img.Set(x, y, color.RGBA{38, 77, 0, 255})
+      } else if world.Feature(x, y) == ROCK {
+        img.Set(x, y, color.RGBA{220, 220, 220, 255})
       } else {
         img.Set(x, y, colours[world.Biome(x, y)])
       }
@@ -608,6 +670,7 @@ func main() {
   mFreq := flag.Float64("mFreq", 2, "moisture noise frequency")
   sFreq := flag.Float64("sFreq", 20, "soil depth noise frequency")
   fFreq := flag.Float64("fFreq", 200, "foliage noise frequency")
+  rFreq := flag.Float64("rFreq", 200, "rock noise frequency")
   threads := flag.Int("cpus", runtime.NumCPU(), "number of cores to use")
 
   flag.Parse()
@@ -622,5 +685,5 @@ func main() {
 
   fmt.Println("width, height, threads")
   fmt.Println(*width, ",", *height, ",", *threads)
-  GenerateMap(*hFreq, *mFreq, *sFreq, *fFreq, *width, *height, *threads)
+  GenerateMap(*hFreq, *mFreq, *sFreq, *fFreq, *rFreq, *width, *height, *threads)
 }
