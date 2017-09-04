@@ -51,7 +51,7 @@ var ROCK_DENSITY = [...]int {
 }
 
 const WATER_LEVEL = -0.4
-const WATER_SATURATION = 4
+const WATER_SATURATION = 1000
 const NO_SOIL = -1.5
 const DRY = -0.5
 const MOIST = 0
@@ -174,11 +174,14 @@ func (w World) AddRivers() {
   queue := make([]*Location, len(w.peaks))
 
   i := 0
+  totalWater := 0.0
   for loc, _ := range w.peaks {
     loc.water = w.water + loc.moisture
+    totalWater += loc.water
     queue[i] = loc
     i++
   }
+  fmt.Println("Total water added:", totalWater)
 
   // Iterate through all queue, which will hold every location eventually.
   for n := 0; n < w.height * w.width; n++ {
@@ -189,93 +192,20 @@ func (w World) AddRivers() {
     for i := 0; i < loc.numPreds; i++ {
 
       pred := loc.preds[i]
-      totalGradient := 0.0
+
+      if pred.water < 0 {
+        continue
+      }
 
       // Calculate percentage of predecessor's water the successor will
       // receive.
-      for j := 0; j < pred.numSuccs; j++ {
-        succ := pred.succs[j]
-        totalGradient += math.Abs(pred.height) - math.Abs(succ.height)
-      }
-
-      gradientRatio := (math.Abs(pred.height) - math.Abs(loc.height)) / totalGradient
+      gradientRatio := (math.Abs(pred.height) - math.Abs(loc.height)) / pred.totalGradient
       water := gradientRatio * pred.water
       loc.water += water
     }
 
-    if loc.moisture > 1 {
-      loc.water *= loc.moisture
-    }
-
-    // Discover all of the Location's successors and add them to the queue if
-    // they've been discovered by all their predecessors.
-    for i := 0; i < loc.numSuccs; i++ {
-      succ := loc.succs[i]
-      succ.discovered++
-      if succ.discovered == succ.numPreds {
-        queue = append(queue, succ)
-        succ.discovered = 0 // reset for next phase
-      }
-    }
-  }
-
-  // Traverse back up from lakes to fill out the lakes and the lower regions of
-  // the rivers.
-  queue = make([]*Location, len(w.lakes))
-  i = 0
-  for loc, _ := range w.lakes {
-    queue[i] = loc
-    i++
-  }
-  for n := 0; n < w.height * w.width; n++ {
-    loc := queue[0]
-    queue = queue[1:]
-
-    for i := 0; i < loc.numPreds; i++ {
-      pred := loc.preds[i]
-      if loc.water > WATER_SATURATION {
-        water := (loc.water - WATER_SATURATION) / float64(loc.numPreds)
-        pred.water += water
-      }
-      pred.discovered++
-      if pred.discovered == pred.numSuccs {
-        queue = append(queue, pred)
-        pred.discovered = 0
-      }
-    }
-  }
-
-  // Second pass down
-  queue = make([]*Location, len(w.peaks))
-  i = 0
-  for loc, _ := range w.peaks {
-    queue[i] = loc
-    i++
-  }
-
-  fmt.Println("Second pass, size of queue: ", len(queue))
-  for n := 0; n < w.height * w.width; n++ {
-    loc := queue[0]
-    queue = queue[1:]
-
-    // Receive water from all of the predecessors. 
-    for i := 0; i < loc.numPreds; i++ {
-
-      pred := loc.preds[i]
-      totalGradient := 0.0
-
-      // Calculate percentage of predecessor's water the successor will
-      // receive.
-      for j := 0; j < pred.numSuccs; j++ {
-        succ := pred.succs[j]
-        totalGradient += math.Abs(pred.height) - math.Abs(succ.height)
-      }
-
-      gradientRatio := (math.Abs(pred.height) - math.Abs(loc.height)) / totalGradient
-      water := gradientRatio * pred.water
-      loc.water += water
-    }
-
+    loc.water += loc.moisture
+    loc.water -= loc.soilDepth
     if loc.water > WATER_SATURATION && loc.biome != OCEAN {
       loc.biome = RIVER
     }
@@ -412,6 +342,13 @@ func (w World) CalcGradient(c chan int) {
       } else if !hasSuccessor {
         w.addLake(w.Location(x, y))
       }
+
+      // Calculate the total gradient of the successors, which will be used to
+      // determine the ratio of water flow. 
+      for i := 0; i < centreLoc.numSuccs; i++ {
+        succ := centreLoc.succs[i]
+        centreLoc.totalGradient += math.Abs(centreLoc.height) - math.Abs(succ.height)
+      }
     }
   }
   c <- 1
@@ -474,10 +411,10 @@ func (w World) CalcMoisture(xBegin, xEnd int,
     for x := xBegin; x < xEnd; x++ {
       xFloat := float64(x) / float64(width)
       yFloat := float64(y) / float64(height)
-      m := 1 * noise.Eval2(freq * xFloat, freq * yFloat) +
-             0.50 * noise.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
-             0.25 * noise.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
-             0.125 * noise.Eval2(8 * freq * xFloat, 8 * freq * yFloat)
+      m := 1.2 * noise.Eval2(freq * xFloat, freq * yFloat) +
+             0.60 * noise.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
+             0.3 * noise.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
+             0.15 * noise.Eval2(8 * freq * xFloat, 8 * freq * yFloat)
 
       w.SetMoisture(x, y, m)
     }
@@ -558,7 +495,7 @@ func GenerateMap(hFreq, mFreq, sFreq, fFreq, rFreq float64,
   fNoise := opensimplex.NewWithSeed(fSeed)
   rNoise := opensimplex.NewWithSeed(rSeed)
 
-  world := CreateWorld(width, height, hFreq, mFreq, sFreq, fFreq, rFreq, 1.5)
+  world := CreateWorld(width, height, hFreq, mFreq, sFreq, fFreq, rFreq, 0.5)
 
   start := time.Now()
 

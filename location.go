@@ -128,6 +128,7 @@ type Location struct {
   height, moisture, soilDepth, foliage, rock, water float64
   preds, succs [4]*Location
   numPreds, numSuccs int
+  totalGradient float64
   discovered, weight int
   x, y int
   biome uint8
