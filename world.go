@@ -4,15 +4,9 @@ import (
   "container/heap"
   "flag"
   "fmt"
-  "image"
-  "image/color"
-  "image/png"
   "math"
   "math/rand"
-  "log"
-  "os"
   "runtime"
-  "strconv"
   "time"
 )
 
@@ -272,11 +266,11 @@ func (w World) AnalyseRegions(xBegin, xEnd int, c chan int) {
 
       for i := 0; i < TREE_DENSITY[maxBiome]; i++ {
         locVal := heap.Pop(&treeHeap).(*LocVal)
-        w.addFeature(locVal.x, locVal.y, TREE);
+        w.addFeature(locVal.x, locVal.y, TREE_FEATURE);
       }
       for i := 0; i < ROCK_DENSITY[maxBiome]; i++ {
         locVal := heap.Pop(&rockHeap).(*LocVal)
-        w.addFeature(locVal.x, locVal.y, ROCK);
+        w.addFeature(locVal.x, locVal.y, ROCK_FEATURE);
       }
     }
   }
@@ -557,54 +551,12 @@ func GenerateMap(hFreq, mFreq, sFreq, fFreq, rFreq float64,
   fmt.Println("Number of peaks: ", len(world.peaks));
   fmt.Println("Numer of lakes: ", len(world.lakes));
 
-  img := image.NewRGBA(image.Rect(0, 0, width, height))
-  colours := [BIOMES]color.RGBA{{ 51, 166, 204, 255 },  // OCEAN
-                                { 0, 102, 102, 255 },   // RIVER
-                                { 255, 230, 128, 255 }, // BEACH
-                                { 204, 204, 204, 255 }, // DRY_ROCK
-                                { 166, 166, 166, 255 }, // MOIST_ROCK
-                                { 202, 218, 114, 255 }, // HEATHLAND
-                                { 128, 153, 51, 255 },  // SHRUBLAND
-                                { 170, 190, 50, 255 },  // GRASSLAND
-                                { 217, 179, 255, 255 }, // MOORLAND
-                                { 85, 128, 0, 255 },    // FENLAND
-                                { 119, 179, 0, 255 },   // WOODLAND
-                                { 77, 153, 0, 255 } }   // FOREST
-
-  bounds := img.Bounds()
-  for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-    for x := bounds.Min.X; x < bounds.Max.X; x++ {
-      if world.Feature(x, y) == TREE {
-        img.Set(x, y, color.RGBA{38, 77, 0, 255})
-      } else if world.Feature(x, y) == ROCK {
-        img.Set(x, y, color.RGBA{220, 220, 220, 255})
-      } else {
-        img.Set(x, y, colours[world.Biome(x, y)])
-      }
-    }
-  }
-
-  filename := "h" + strconv.FormatInt(hSeed, 16) + "-" +
-              "m" + strconv.FormatInt(mSeed, 16) + "-" +
-              "s" + strconv.FormatInt(sSeed, 16) + "-" +
-              "f" + strconv.FormatInt(fSeed, 16) + "-" +
-              "r" + strconv.FormatInt(rSeed, 16) + ".png"
-  imgFile, err := os.Create(filename)
-  if err != nil {
-    log.Fatal(err)
-  }
-  if err := png.Encode(imgFile, img); err != nil {
-    imgFile.Close();
-    log.Fatal(err)
-  }
-  if err := imgFile.Close(); err != nil {
-    log.Fatal(err)
-  }
+  DrawMap(world, hSeed, mSeed, sSeed, fSeed, rSeed)
 }
 
 func main() {
-  width := flag.Int("width", 2304, "map width")
-  height := flag.Int("height", 1536, "map height")
+  width := flag.Int("width", 768, "map width")
+  height := flag.Int("height", 512, "map height")
   hFreq := flag.Float64("hFreq", 5, "height noise frequency")
   mFreq := flag.Float64("mFreq", 2, "moisture noise frequency")
   sFreq := flag.Float64("sFreq", 20, "soil depth noise frequency")
@@ -614,11 +566,11 @@ func main() {
 
   flag.Parse()
 
-  if *width % REGION_SIZE != 0 {
-    fmt.Println("width needs to be a factor of", REGION_SIZE)
+  if *width % (REGION_SIZE * *threads) != 0 {
+    fmt.Println("width needs to be a factor of", *threads * REGION_SIZE)
     return
-  } else if *height % REGION_SIZE != 0 {
-    fmt.Println("height needs to be a factor of", REGION_SIZE)
+  } else if *height % (REGION_SIZE * *threads) != 0 {
+    fmt.Println("height needs to be a factor of", *threads * REGION_SIZE)
     return
   }
 

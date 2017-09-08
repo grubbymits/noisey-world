@@ -2,8 +2,8 @@ package main
 
 const (
   EMPTY = iota
-  TREE
-  ROCK
+  TREE_FEATURE
+  ROCK_FEATURE
 )
 
 const (
