@@ -23,7 +23,7 @@ import (
 // dry grass 12
 const (
   PLANTS = iota
-  _
+  TREES
   _
   _
   _
@@ -37,6 +37,9 @@ const (
   DRY_GRASS
   MAX_TILE_COLUMNS
 )
+
+const NUM_ROCKS = 8
+const NUM_TREES = 4
 
 const (
   PLAIN_0 = iota
@@ -59,6 +62,33 @@ const (
   _
   MAX_TILE_ROWS
 )
+
+const (
+  LIGHT_GREEN_ROUND = iota
+  DARK_GREEN_ROUND
+  LIGHT_GREEN_ROUND_WHITE
+  DARK_GREEN_ROUND_WHITE
+  WHITE_ROUND_0
+  WHITE_ROUND_1
+  LIGHT_GREEN_ROUND_PURPLE
+  DARK_GREEN_ROUND_PURPLE
+  DARK_PURPLE_ROUND_0
+  DARK_PURPLE_ROUND_1
+  LIGHT_PURPLE_ROUND_0
+  LIGHT_PURPLE_ROUND_1
+  LIGHT_GREEN_ROUND_YELLOW
+  DARK_GREEN_ROUND_YELLOW
+  YELLOW_ROUND_0
+  YELLOW_ROUND_1
+  ORANGE_ROUND_0
+  ORANGE_ROUND_1
+  RED_ROUND_0
+  RED_ROUND_1
+  TREES_END
+)
+
+const LIGHT_PINE = TREES_END * 2
+const DARK_PINE = LIGHT_PINE + 1
 
 const TILE_WIDTH = 16
 const TILE_HEIGHT = 16
@@ -177,6 +207,7 @@ func DrawMap(w *World, hSeed, mSeed, sSeed, fSeed, rSeed int64) {
     }
   }
 
+  // Ground tiles
   var TILE_ROWS = [...] int {
     WATER,        // OCEAN
     WATER,        // RIVER
@@ -195,16 +226,43 @@ func DrawMap(w *World, hSeed, mSeed, sSeed, fSeed, rSeed int64) {
   var TILE_COLUMNS = [...] []int {
     { PLAIN_0, PLAIN_1 },
     { PLAIN_0, PLAIN_1 },
-    { PLAIN_0, PLAIN_1, ROCK_PATCH, SAND_PATCH },
-    { PLAIN_0, PLAIN_1, ROCK_PATCH, SAND_PATCH },
-    { PLAIN_0, PLAIN_1, ROCK_PATCH, DRY_SOIL_PATCH, WET_SOIL_PATCH, SAND_PATCH },
-    { PLAIN_0, PLAIN_1, DRY_SOIL_PATCH, SAND_PATCH, YELLOW_FLOWERS },
-    { PLAIN_0, PLAIN_1, ROCK_PATCH, DRY_SOIL_PATCH, YELLOW_FLOWERS },
-    { PLAIN_0, PLAIN_1, YELLOW_FLOWERS, WHITE_FLOWERS },
-    { PLAIN_0, PLAIN_1, ROCK_PATCH, WET_SOIL_PATCH, PURPLE_FLOWERS_0, PURPLE_FLOWERS_1 },
-    { PLAIN_0, PLAIN_1, WET_SOIL_PATCH, WHITE_FLOWERS },
-    { PLAIN_0, PLAIN_1, ROCK_PATCH, DRY_SOIL_PATCH, WET_SOIL_PATCH, WHITE_FLOWERS },
-    { PLAIN_0, PLAIN_1, WET_SOIL_PATCH, SAND_PATCH, PURPLE_FLOWERS_0, PURPLE_FLOWERS_1 },
+    { PLAIN_0, PLAIN_1, PLAIN_0, PLAIN_1, ROCK_PATCH, SAND_PATCH },
+    { PLAIN_0, PLAIN_1, PLAIN_0, PLAIN_1, ROCK_PATCH, SAND_PATCH },
+    { PLAIN_0, PLAIN_1, PLAIN_0, PLAIN_1, ROCK_PATCH, DRY_SOIL_PATCH,
+      WET_SOIL_PATCH, SAND_PATCH },
+    { PLAIN_0, PLAIN_1, PLAIN_0, PLAIN_1, DRY_SOIL_PATCH, SAND_PATCH,
+      YELLOW_FLOWERS },
+    { PLAIN_0, PLAIN_1, PLAIN_0, PLAIN_1, ROCK_PATCH, DRY_SOIL_PATCH,
+      YELLOW_FLOWERS },
+    { PLAIN_0, PLAIN_1, PLAIN_0, PLAIN_1, YELLOW_FLOWERS, WHITE_FLOWERS },
+    { PLAIN_0, PLAIN_1, PLAIN_0, PLAIN_1, ROCK_PATCH, WET_SOIL_PATCH,
+      PURPLE_FLOWERS_0, PURPLE_FLOWERS_1 },
+    { PLAIN_0, PLAIN_1, PLAIN_0, PLAIN_1, WET_SOIL_PATCH, WHITE_FLOWERS },
+    { PLAIN_0, PLAIN_1, PLAIN_0, PLAIN_1, ROCK_PATCH, DRY_SOIL_PATCH,
+      WET_SOIL_PATCH, WHITE_FLOWERS },
+    { PLAIN_0, PLAIN_1, PLAIN_0, PLAIN_1, WET_SOIL_PATCH, SAND_PATCH,
+      PURPLE_FLOWERS_0, PURPLE_FLOWERS_1 },
+  }
+
+  var BIOME_TREES = [...] []int {
+    { },
+    { },
+    { },
+    { LIGHT_PINE, DARK_PINE },
+    { LIGHT_PINE, DARK_PINE },
+    { LIGHT_GREEN_ROUND, LIGHT_GREEN_ROUND_YELLOW, YELLOW_ROUND_0, YELLOW_ROUND_1,
+      TREES_END + YELLOW_ROUND_0, TREES_END + YELLOW_ROUND_1 },
+    { LIGHT_GREEN_ROUND, TREES_END + LIGHT_GREEN_ROUND,
+      TREES_END + DARK_GREEN_ROUND, TREES_END + LIGHT_GREEN_ROUND_YELLOW,
+      TREES_END + DARK_GREEN_ROUND_YELLOW },
+    { TREES_END + LIGHT_GREEN_ROUND, TREES_END + DARK_GREEN_ROUND,
+      TREES_END + LIGHT_GREEN_ROUND_WHITE, TREES_END + DARK_GREEN_ROUND_WHITE },
+    { TREES_END + DARK_PURPLE_ROUND_0, TREES_END + DARK_PURPLE_ROUND_1,
+      TREES_END + LIGHT_PURPLE_ROUND_0, TREES_END + LIGHT_PURPLE_ROUND_1 },
+    { TREES_END + LIGHT_GREEN_ROUND, TREES_END + DARK_GREEN_ROUND },
+    { LIGHT_PINE, DARK_PINE, LIGHT_GREEN_ROUND, DARK_GREEN_ROUND,
+      TREES_END + LIGHT_GREEN_ROUND, TREES_END + DARK_GREEN_ROUND },
+    { LIGHT_PINE, DARK_PINE, LIGHT_GREEN_ROUND, DARK_GREEN_ROUND },
   }
 
   mapWidth := w.width * TILE_WIDTH
@@ -225,8 +283,25 @@ func DrawMap(w *World, hSeed, mSeed, sSeed, fSeed, rSeed int64) {
       // Copy tile from spritesheet to mapImg
       destR := image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
                           x * TILE_WIDTH + TILE_WIDTH,
-                          y * TILE_HEIGHT + TILE_HEIGHT) //dp, dp.Add(sr.Size())}
+                          y * TILE_HEIGHT + TILE_HEIGHT)
       draw.Draw(mapImg, destR, spritesheet, srcR.Min, draw.Src)
+
+      if w.Feature(x, y) == ROCK_FEATURE {
+        col := rand.Intn(NUM_ROCKS)
+        srcR = sprites[ROCKS * MAX_TILE_ROWS + col]
+        destR = image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
+                           x * TILE_WIDTH + TILE_WIDTH,
+                           y * TILE_HEIGHT + TILE_HEIGHT)
+        draw.Draw(mapImg, destR, spritesheet, srcR.Min, draw.Over)
+      } else if w.Feature(x, y) == TREE_FEATURE {
+        trees := BIOME_TREES[biome]
+        col := rand.Intn(len(trees))
+        srcR = sprites[TREES * MAX_TILE_ROWS + trees[col]]
+        destR = image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
+                           x * TILE_WIDTH + TILE_WIDTH,
+                           y * TILE_HEIGHT + TILE_HEIGHT)
+        draw.Draw(mapImg, destR, spritesheet, srcR.Min, draw.Over)
+      }
     }
   }
 
