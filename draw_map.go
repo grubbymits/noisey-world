@@ -35,7 +35,10 @@ const (
   MOIST_GRASS
   GRASS
   DRY_GRASS
-  MAX_TILE_COLUMNS
+  _
+  _
+  GREY_PATH
+  MAX_TILE_ROWS
 )
 
 const NUM_ROCKS = 8
@@ -60,9 +63,18 @@ const (
   _
   _
   _
-  MAX_TILE_ROWS
+  MAX_TILE_COLUMNS
 )
 
+const SHADOW_ROW = GREY_PATH
+const (
+  RIGHT_SHADOW = 14
+  BOTTOM_SHADOW = 15
+  TOP_SHADOW = 16
+  LEFT_SHADOW = 17
+)
+
+// Foliage, treat as continous row.
 const (
   LIGHT_GREEN_ROUND = iota
   DARK_GREEN_ROUND
@@ -116,6 +128,7 @@ const TILE_HEIGHT = 16
 // RIVER - water
 // BEACH - sand
 // DRY_ROCK - sand, sand with rock
+// WALL - rock
 // MOIST_ROCK - sand, sand with soil, sand with grass
 // HEATHLAND - dry grass, dry grass with yellow flowers, dry grass with sand
 // SHRUBLAND - moist grass, moist grass with moist and wet soil
@@ -133,6 +146,7 @@ func DrawMap(w *World, hSeed, mSeed, sSeed, fSeed, rSeed int64) {
                                 { 0, 102, 102, 255 },   // RIVER
                                 { 255, 230, 128, 255 }, // BEACH
                                 { 204, 204, 204, 255 }, // DRY_ROCK
+                                { 204, 204, 204, 255 }, // WALL
                                 { 166, 166, 166, 255 }, // MOIST_ROCK
                                 { 202, 218, 114, 255 }, // HEATHLAND
                                 { 128, 153, 51, 255 },  // SHRUBLAND
@@ -145,9 +159,9 @@ func DrawMap(w *World, hSeed, mSeed, sSeed, fSeed, rSeed int64) {
   bounds := overworld.Bounds()
   for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
     for x := bounds.Min.X; x < bounds.Max.X; x++ {
-      if w.Feature(x, y) == TREE_FEATURE {
+      if w.hasFeature(x, y, TREE_FEATURE) {
         overworld.Set(x, y, color.RGBA{38, 77, 0, 255})
-      } else if w.Feature(x, y) == ROCK_FEATURE {
+      } else if w.hasFeature(x, y, ROCK_FEATURE) {
         overworld.Set(x, y, color.RGBA{220, 220, 220, 255})
       } else {
         overworld.Set(x, y, colours[w.Biome(x, y)])
@@ -198,9 +212,9 @@ func DrawMap(w *World, hSeed, mSeed, sSeed, fSeed, rSeed int64) {
   // WOODLAND:    x = MOIST_GRASS,  y = [ROCK, DRY_SOIL, WET_SOIL, WHITE_FLOWERS]
   // FOREST:      x = MOIST_GRASS,  y = [WET_SOIL, SAND, PURPLE_FLOWERS_0, PURPLE_FLOWERS_1]  
   sprites := make([]image.Rectangle, MAX_TILE_COLUMNS * MAX_TILE_ROWS)
-  for y := 0; y < MAX_TILE_COLUMNS; y++ {
-    for x := 0; x < MAX_TILE_ROWS; x++ {
-      idx := y * MAX_TILE_ROWS + x
+  for y := 0; y < MAX_TILE_ROWS; y++ {
+    for x := 0; x < MAX_TILE_COLUMNS; x++ {
+      idx := y * MAX_TILE_COLUMNS + x
       sprites[idx] = image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
                                 x * TILE_WIDTH + TILE_WIDTH,
                                 y * TILE_HEIGHT + TILE_HEIGHT )
@@ -212,8 +226,9 @@ func DrawMap(w *World, hSeed, mSeed, sSeed, fSeed, rSeed int64) {
     WATER,        // OCEAN
     WATER,        // RIVER
     SAND,         // BEACH
-    SOIL,         // DRY_ROCK
-    SAND,         // MOIST_ROCK
+    SAND,         // DRY_ROCK
+    ROCKS,        // WALL
+    SOIL,         // MOIST_ROCK
     DRY_GRASS,    // HEATHLAND
     GRASS,        // SHRUBLAND
     GRASS,        // GRASSLAND
@@ -226,22 +241,22 @@ func DrawMap(w *World, hSeed, mSeed, sSeed, fSeed, rSeed int64) {
   var TILE_COLUMNS = [...] []int {
     { PLAIN_0, PLAIN_1 },
     { PLAIN_0, PLAIN_1 },
-    { PLAIN_0, PLAIN_1, PLAIN_0, PLAIN_1, ROCK_PATCH, SAND_PATCH },
-    { PLAIN_0, PLAIN_1, PLAIN_0, PLAIN_1, ROCK_PATCH, SAND_PATCH },
-    { PLAIN_0, PLAIN_1, PLAIN_0, PLAIN_1, ROCK_PATCH, DRY_SOIL_PATCH,
-      WET_SOIL_PATCH, SAND_PATCH },
-    { PLAIN_0, PLAIN_1, PLAIN_0, PLAIN_1, DRY_SOIL_PATCH, SAND_PATCH,
-      YELLOW_FLOWERS },
-    { PLAIN_0, PLAIN_1, PLAIN_0, PLAIN_1, ROCK_PATCH, DRY_SOIL_PATCH,
-      YELLOW_FLOWERS },
-    { PLAIN_0, PLAIN_1, PLAIN_0, PLAIN_1, YELLOW_FLOWERS, WHITE_FLOWERS },
-    { PLAIN_0, PLAIN_1, PLAIN_0, PLAIN_1, ROCK_PATCH, WET_SOIL_PATCH,
-      PURPLE_FLOWERS_0, PURPLE_FLOWERS_1 },
-    { PLAIN_0, PLAIN_1, PLAIN_0, PLAIN_1, WET_SOIL_PATCH, WHITE_FLOWERS },
-    { PLAIN_0, PLAIN_1, PLAIN_0, PLAIN_1, ROCK_PATCH, DRY_SOIL_PATCH,
-      WET_SOIL_PATCH, WHITE_FLOWERS },
-    { PLAIN_0, PLAIN_1, PLAIN_0, PLAIN_1, WET_SOIL_PATCH, SAND_PATCH,
-      PURPLE_FLOWERS_0, PURPLE_FLOWERS_1 },
+    { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, ROCK_PATCH, SAND_PATCH },
+    { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, ROCK_PATCH, SAND_PATCH },
+    { 16, 17 },
+    { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, ROCK_PATCH, SAND_PATCH },
+    { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, DRY_SOIL_PATCH, SAND_PATCH,
+      //YELLOW_FLOWERS },
+    { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, ROCK_PATCH, DRY_SOIL_PATCH,
+      //YELLOW_FLOWERS },
+    { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, YELLOW_FLOWERS, WHITE_FLOWERS },
+    { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, ROCK_PATCH, WET_SOIL_PATCH,
+      //PURPLE_FLOWERS_0, PURPLE_FLOWERS_1 },
+    { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, WET_SOIL_PATCH, WHITE_FLOWERS },
+    { PLAIN_0, PLAIN_1 },// , PLAIN_0, PLAIN_1, ROCK_PATCH, DRY_SOIL_PATCH,
+      //WET_SOIL_PATCH, WHITE_FLOWERS },
+    { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, WET_SOIL_PATCH, SAND_PATCH,
+      //PURPLE_FLOWERS_0, PURPLE_FLOWERS_1 },
   }
 
   var BIOME_TREES = [...] []int {
@@ -249,6 +264,7 @@ func DrawMap(w *World, hSeed, mSeed, sSeed, fSeed, rSeed int64) {
     { },
     { },
     { LIGHT_PINE, DARK_PINE },
+    { },
     { LIGHT_PINE, DARK_PINE },
     { LIGHT_GREEN_ROUND, LIGHT_GREEN_ROUND_YELLOW, YELLOW_ROUND_0, YELLOW_ROUND_1,
       TREES_END + YELLOW_ROUND_0, TREES_END + YELLOW_ROUND_1 },
@@ -265,6 +281,7 @@ func DrawMap(w *World, hSeed, mSeed, sSeed, fSeed, rSeed int64) {
     { LIGHT_PINE, DARK_PINE, LIGHT_GREEN_ROUND, DARK_GREEN_ROUND },
   }
 
+
   mapWidth := w.width * TILE_WIDTH
   mapHeight := w.height * TILE_HEIGHT
   mapImg := image.NewRGBA(image.Rect(0, 0, mapWidth, mapHeight))
@@ -279,24 +296,58 @@ func DrawMap(w *World, hSeed, mSeed, sSeed, fSeed, rSeed int64) {
       column := TILE_COLUMNS[biome]
       colIdx := rand.Intn(len(column))
       row := TILE_ROWS[biome]
-      srcR := sprites[row * MAX_TILE_ROWS + column[colIdx]]
+      srcR := sprites[row * MAX_TILE_COLUMNS + column[colIdx]]
       // Copy tile from spritesheet to mapImg
       destR := image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
                           x * TILE_WIDTH + TILE_WIDTH,
                           y * TILE_HEIGHT + TILE_HEIGHT)
       draw.Draw(mapImg, destR, spritesheet, srcR.Min, draw.Src)
 
-      if w.Feature(x, y) == ROCK_FEATURE {
-        col := rand.Intn(NUM_ROCKS)
-        srcR = sprites[ROCKS * MAX_TILE_ROWS + col]
+      loc := w.Location(x, y)
+
+      if loc.features == EMPTY {
+        continue
+      }
+      if loc.hasFeature(RIGHT_SHADOW_FEATURE) {
+        srcR = sprites[SHADOW_ROW * MAX_TILE_COLUMNS + RIGHT_SHADOW]
         destR = image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
                            x * TILE_WIDTH + TILE_WIDTH,
                            y * TILE_HEIGHT + TILE_HEIGHT)
         draw.Draw(mapImg, destR, spritesheet, srcR.Min, draw.Over)
-      } else if w.Feature(x, y) == TREE_FEATURE {
+      }
+      if loc.hasFeature(BOTTOM_SHADOW_FEATURE) {
+        srcR = sprites[SHADOW_ROW * MAX_TILE_COLUMNS + BOTTOM_SHADOW]
+        destR = image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
+                           x * TILE_WIDTH + TILE_WIDTH,
+                           y * TILE_HEIGHT + TILE_HEIGHT)
+        draw.Draw(mapImg, destR, spritesheet, srcR.Min, draw.Over)
+      } 
+      if loc.hasFeature(LEFT_SHADOW_FEATURE) {
+        srcR = sprites[SHADOW_ROW * MAX_TILE_COLUMNS + LEFT_SHADOW]
+        destR = image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
+                           x * TILE_WIDTH + TILE_WIDTH,
+                           y * TILE_HEIGHT + TILE_HEIGHT)
+        draw.Draw(mapImg, destR, spritesheet, srcR.Min, draw.Over)
+      }
+      if loc.hasFeature(TOP_SHADOW_FEATURE) {
+        srcR = sprites[SHADOW_ROW * MAX_TILE_COLUMNS + TOP_SHADOW]
+        destR = image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
+                           x * TILE_WIDTH + TILE_WIDTH,
+                           y * TILE_HEIGHT + TILE_HEIGHT)
+        draw.Draw(mapImg, destR, spritesheet, srcR.Min, draw.Over)
+      }
+      if loc.hasFeature(ROCK_FEATURE) {
+        col := rand.Intn(NUM_ROCKS)
+        srcR = sprites[ROCKS * MAX_TILE_COLUMNS + col]
+        destR = image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
+                           x * TILE_WIDTH + TILE_WIDTH,
+                           y * TILE_HEIGHT + TILE_HEIGHT)
+        draw.Draw(mapImg, destR, spritesheet, srcR.Min, draw.Over)
+      }
+      if loc.hasFeature(TREE_FEATURE) {
         trees := BIOME_TREES[biome]
         col := rand.Intn(len(trees))
-        srcR = sprites[TREES * MAX_TILE_ROWS + trees[col]]
+        srcR = sprites[TREES * MAX_TILE_COLUMNS + trees[col]]
         destR = image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
                            x * TILE_WIDTH + TILE_WIDTH,
                            y * TILE_HEIGHT + TILE_HEIGHT)

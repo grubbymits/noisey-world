@@ -19,6 +19,7 @@ var TREE_DENSITY = [...]int {
   0,  // RIVER
   REGION_SIZE / 1024,  // BEACH
   REGION_AREA / 512,  // DRY_ROCK
+  0,                  // WALL
   REGION_AREA / 256,  // MOIST_ROCK
   REGION_AREA / 96,   // HEATHLAND
   REGION_AREA / 64,   // SHRUBLAND
@@ -34,6 +35,7 @@ var ROCK_DENSITY = [...]int {
   REGION_SIZE / 32,   // RIVER
   REGION_SIZE / 32,   // BEACH
   REGION_AREA / 16,   // DRY_ROCK
+  0,                  // WALL
   REGION_AREA / 16,   // MOIST_ROCK
   REGION_AREA / 1024, // HEATHLAND
   REGION_AREA / 512,  // SHRUBLAND
@@ -44,7 +46,11 @@ var ROCK_DENSITY = [...]int {
   REGION_AREA / 512,  // FOREST
 }
 
-const WATER_LEVEL = -0.4
+const WATER_LEVEL = -0.35
+const BEACH_LEVEL = WATER_LEVEL + 0.05
+const LOWLANDS = BEACH_LEVEL + 0.3
+const MIDLANDS = LOWLANDS + 0.3
+const HIGHLANDS = MIDLANDS + 0.3
 const WATER_SATURATION = 1000
 const NO_SOIL = -1.5
 const DRY = -0.5
@@ -52,8 +58,6 @@ const MOIST = 0
 const WET = 0.3
 const THICK_SOIL = -0.2
 const SHALLOW_SOIL = -0.7
-const HIGHLANDS = 0.5
-const MIDLANDS = 0
 
 type World struct {
   width, height int
@@ -99,11 +103,11 @@ func (w World) addLake(l *Location) {
 }
 
 func (w World) addFeature(x, y int, feature uint8) {
-  w.locations[y * w.width + x].feature = feature
+  w.locations[y * w.width + x].features |= feature
 }
 
-func (w World) Feature(x, y int) uint8 {
-  return w.locations[y * w.width + x].feature
+func (w World) hasFeature(x, y int, feat uint8) bool {
+  return w.locations[y * w.width + x].hasFeature(feat)
 }
 
 func (w World) Location(x, y int) *Location {
@@ -136,6 +140,10 @@ func (w World) Rock(x, y int) float64 {
   return w.locations[y * w.width + x].rock
 }
 
+func (w World) Terrace(x, y int) uint8 {
+  return w.locations[y * w.width + x].terrace
+}
+
 func (w World) Biome(x, y int) uint8 {
   return w.locations[y * w.width + x].biome
 }
@@ -158,6 +166,10 @@ func (w World) SetRock(x, y int, r float64) {
 
 func (w World) SetHeight(x, y int, h float64) {
   w.locations[y * w.width + x].height = h
+}
+
+func (w World) SetTerrace(x, y int, t uint8) {
+  w.locations[y * w.width + x].terrace = t
 }
 
 func (w World) SetBiome(x, y int, b uint8) {
@@ -240,13 +252,17 @@ func (w World) AnalyseRegions(xBegin, xEnd int, c chan int) {
       for ry := y; ry < y + REGION_SIZE; ry++ {
         for rx := x; rx < x + REGION_SIZE; rx++ {
           foliage := 0.0
+          rock := 0.0
           biome := w.Biome(rx, ry)
           biomeCount[biome]++
-          if biome != OCEAN && biome != BEACH && biome != RIVER {
+          if biome != OCEAN && biome != BEACH && biome != RIVER && biome != WALL {
             foliage = w.Foliage(rx, ry)
           }
+          if biome != WALL {
+            rock = w.Rock(rx, ry)
+          }
           treeHeap[i] = &LocVal{ i, rx, ry, foliage }
-          rockHeap[i] = &LocVal{ i, rx, ry, w.Rock(rx, ry) }
+          rockHeap[i] = &LocVal{ i, rx, ry, rock }
           i++
         }
       }
@@ -296,6 +312,9 @@ func (w World) CalcGradient(c chan int) {
         } else if otherLoc.height > centreLoc.height {
           centreLoc.addPredecessor(otherLoc)
           hasPredecessor = true
+          if otherLoc.terrace > centreLoc.terrace {
+            centreLoc.addFeature(BOTTOM_SHADOW_FEATURE)
+          }
         }
       }
 
@@ -307,6 +326,9 @@ func (w World) CalcGradient(c chan int) {
         } else if otherLoc.height > centreLoc.height {
           centreLoc.addPredecessor(otherLoc)
           hasPredecessor = true
+          if otherLoc.terrace > centreLoc.terrace {
+            centreLoc.addFeature(RIGHT_SHADOW_FEATURE)
+          }
         }
       }
 
@@ -318,6 +340,9 @@ func (w World) CalcGradient(c chan int) {
         } else if otherLoc.height > centreLoc.height {
           centreLoc.addPredecessor(otherLoc)
           hasPredecessor = true
+          if otherLoc.terrace > centreLoc.terrace {
+            centreLoc.addFeature(TOP_SHADOW_FEATURE)
+          }
         }
       }
 
@@ -329,6 +354,9 @@ func (w World) CalcGradient(c chan int) {
         } else if otherLoc.height > centreLoc.height {
           centreLoc.addPredecessor(otherLoc)
           hasPredecessor = true
+          if otherLoc.terrace > centreLoc.terrace {
+            centreLoc.addFeature(LEFT_SHADOW_FEATURE)
+          }
         }
       }
       if !hasPredecessor {
@@ -366,6 +394,17 @@ func (world World) CalcHeight(xBegin, xEnd int,
              heightBias * float64(height - y)
 
       //h  = math.Pow(h, float64(1 + (y / height)))
+      if h > HIGHLANDS {
+        world.SetTerrace(x, y, 4)
+      } else if h > MIDLANDS {
+        world.SetTerrace(x, y, 3)
+      } else if h > LOWLANDS {
+        world.SetTerrace(x, y, 2)
+      } else if h > BEACH {
+        world.SetTerrace(x, y, 1)
+      } else {
+        world.SetTerrace(x, y, 0)
+      }
       world.SetHeight(x, y, h)
     }
   }
@@ -419,8 +458,17 @@ func (w World) CalcMoisture(xBegin, xEnd int,
 func (w World) CalcBiome(xBegin, xEnd int, c chan int) {
   height := w.height
 
-  for y := 0; y < height; y++ {
+  for x := xBegin; x < xEnd; x++ {
+    w.SetBiome(x, 0, biome(w.Height(x, 0), w.Moisture(x, 0),
+               w.SoilDepth(x, 0)))
+  }
+
+  for y := 1; y < height; y++ {
     for x := xBegin; x < xEnd; x++ {
+      if w.Terrace(x, y - 1) > w.Terrace(x, y) {
+        w.SetBiome(x, y - 1, WALL)
+        //w.SetBiome(x, y, WALL)
+      }
       w.SetBiome(x, y, biome(w.Height(x, y), w.Moisture(x, y),
                  w.SoilDepth(x, y)))
     }

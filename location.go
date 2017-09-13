@@ -1,9 +1,13 @@
 package main
 
 const (
-  EMPTY = iota
-  TREE_FEATURE
-  ROCK_FEATURE
+  EMPTY = 0
+  TREE_FEATURE = 1
+  ROCK_FEATURE = 1 << 1
+  RIGHT_SHADOW_FEATURE = 1 << 2
+  BOTTOM_SHADOW_FEATURE = 1 << 3
+  TOP_SHADOW_FEATURE = 1 << 4
+  LEFT_SHADOW_FEATURE = 1 << 5
 )
 
 const (
@@ -11,6 +15,7 @@ const (
   RIVER
   BEACH
   DRY_ROCK
+  WALL
   MOIST_ROCK
   HEATHLAND
   SHRUBLAND
@@ -43,7 +48,7 @@ func biome(h, m, s float64) uint8 {
 
   if h < WATER_LEVEL {
     return OCEAN
-  } else if h < WATER_LEVEL + 0.05 {
+  } else if h < BEACH_LEVEL {
     return BEACH
   }
 
@@ -131,8 +136,7 @@ type Location struct {
   totalGradient float64
   discovered, weight int
   x, y int
-  biome uint8
-  feature uint8
+  biome, features, terrace uint8
 }
 
 func (l *Location) addSuccessor(other *Location) {
@@ -143,6 +147,14 @@ func (l *Location) addSuccessor(other *Location) {
 func (l *Location) addPredecessor(other *Location) {
   l.preds[l.numPreds] = other
   l.numPreds = l.numPreds + 1
+}
+
+func (l *Location) addFeature(feat uint8) {
+  l.features |= feat
+}
+
+func (l *Location) hasFeature(feat uint8) bool {
+  return feat & l.features == feat
 }
 
 type LocVal struct {
