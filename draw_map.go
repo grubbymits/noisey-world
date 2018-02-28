@@ -101,10 +101,70 @@ const (
 
 const LIGHT_PINE = TREES_END * 2
 const DARK_PINE = LIGHT_PINE + 1
+const RIVER_BANK_COLUMN = 10
 
 const TILE_WIDTH = 16
 const TILE_HEIGHT = 16
 
+// Ground tiles
+var TILE_ROWS = [...] int {
+  WATER,        // OCEAN
+  WATER,        // RIVER
+  SAND,         // BEACH
+  SAND,         // DRY_ROCK
+  ROCKS,        // WALL
+  SOIL,         // MOIST_ROCK
+  DRY_GRASS,    // HEATHLAND
+  GRASS,        // SHRUBLAND
+  GRASS,        // GRASSLAND
+  WET_GRASS,    // MOORLAND
+  WET_GRASS,    // FENLAND
+  MOIST_GRASS,  // WOODLAND
+  MOIST_GRASS,  // FOREST
+}
+
+var TILE_COLUMNS = [...] []int {
+  { PLAIN_0, PLAIN_1 },
+  { PLAIN_0, PLAIN_1 },
+  { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, ROCK_PATCH, SAND_PATCH },
+  { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, ROCK_PATCH, SAND_PATCH },
+  { 16, 17 },
+  { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, ROCK_PATCH, SAND_PATCH },
+  { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, DRY_SOIL_PATCH, SAND_PATCH,
+  //YELLOW_FLOWERS },
+  { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, ROCK_PATCH, DRY_SOIL_PATCH,
+  //YELLOW_FLOWERS },
+  { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, YELLOW_FLOWERS, WHITE_FLOWERS },
+  { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, ROCK_PATCH, WET_SOIL_PATCH,
+  //PURPLE_FLOWERS_0, PURPLE_FLOWERS_1 },
+  { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, WET_SOIL_PATCH, WHITE_FLOWERS },
+  { PLAIN_0, PLAIN_1 },// , PLAIN_0, PLAIN_1, ROCK_PATCH, DRY_SOIL_PATCH,
+  //WET_SOIL_PATCH, WHITE_FLOWERS },
+  { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, WET_SOIL_PATCH, SAND_PATCH,
+  //PURPLE_FLOWERS_0, PURPLE_FLOWERS_1 },
+}
+
+var BIOME_TREES = [...] []int {
+  { },  // OCEAN
+  { },  // RIVER
+  { },  // BEACH
+  { LIGHT_PINE, DARK_PINE },  // DRY_ROCK
+  { },  // WALL
+  { LIGHT_PINE, DARK_PINE },  // WET_ROCK
+  { LIGHT_GREEN_ROUND, LIGHT_GREEN_ROUND_YELLOW, YELLOW_ROUND_0, YELLOW_ROUND_1,
+    TREES_END + YELLOW_ROUND_0, TREES_END + YELLOW_ROUND_1 }, // HEATHLAND
+  { LIGHT_GREEN_ROUND, TREES_END + LIGHT_GREEN_ROUND,
+    TREES_END + DARK_GREEN_ROUND, TREES_END + LIGHT_GREEN_ROUND_YELLOW,
+    TREES_END + DARK_GREEN_ROUND_YELLOW },  // SHRUBLAND
+  { TREES_END + LIGHT_GREEN_ROUND, TREES_END + DARK_GREEN_ROUND,
+    TREES_END + LIGHT_GREEN_ROUND_WHITE, TREES_END + DARK_GREEN_ROUND_WHITE }, // GRASSLAND
+  { TREES_END + DARK_PURPLE_ROUND_0, TREES_END + DARK_PURPLE_ROUND_1,
+    TREES_END + LIGHT_PURPLE_ROUND_0, TREES_END + LIGHT_PURPLE_ROUND_1 }, // MOORLAND
+  { TREES_END + LIGHT_GREEN_ROUND, TREES_END + DARK_GREEN_ROUND },  // FENLAND
+  { LIGHT_PINE, DARK_PINE, LIGHT_GREEN_ROUND, DARK_GREEN_ROUND,
+    TREES_END + LIGHT_GREEN_ROUND, TREES_END + DARK_GREEN_ROUND },  // WOODLAND
+  { LIGHT_PINE, DARK_PINE, LIGHT_GREEN_ROUND, DARK_GREEN_ROUND },   // FOREST
+}
 
 // floor tiles columns:
 // - normal, normal = 0, 1
@@ -137,6 +197,97 @@ const TILE_HEIGHT = 16
 // FENLAND - wet grass
 // WOODLAND - grass, grass with rock, grass with soils
 // FOREST - soil, soil with grass, soil wet grass
+
+type MapRenderer struct {
+  mapWidth, mapHeight, tileWidth, tileHeight, tileColumns, tileRows int
+  sprites []image.Rectangle
+  spritesheet image.Image
+  mapImg draw.Image
+}
+
+func CreateMapRenderer(width, height, cols, rows int) *MapRenderer {
+
+  // Now use that pixel data to create the game map constructed from tiled
+  // sprites.
+  tilesheetFile, err := os.Open("outdoor_tiles.png")
+  if err != nil {
+    log.Fatal(err)
+  }
+
+  spritesheet, err := png.Decode(tilesheetFile)
+  if err != nil {
+    log.Fatal(err)
+  }
+  fmt.Println("opened and decoded tilesheet")
+
+  render := new(MapRenderer)
+  render.spritesheet = spritesheet
+  render.mapWidth = width
+  render.mapHeight = height
+  render.tileWidth = TILE_WIDTH
+  render.tileHeight = TILE_HEIGHT
+  render.tileColumns = cols
+  render.tileRows = rows
+  render.spritesheet = spritesheet
+  render.mapImg = image.NewRGBA(image.Rect(0, 0, width, height))
+  render.sprites = make([]image.Rectangle, cols * rows)
+  for y := 0; y < rows; y++ {
+    for x := 0; x < cols; x++ {
+      idx := y * cols + x
+      render.sprites[idx] = image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
+                                       x * TILE_WIDTH + TILE_WIDTH,
+                                       y * TILE_HEIGHT + TILE_HEIGHT )
+    }
+  }
+  return render
+}
+
+func (renderer *MapRenderer) DrawFeature(x, y, idx int) {
+  srcR := renderer.sprites[idx]
+  destR := image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
+                      x * TILE_WIDTH + TILE_WIDTH,
+                      y * TILE_HEIGHT + TILE_HEIGHT)
+  draw.Draw(renderer.mapImg, destR, renderer.spritesheet, srcR.Min, draw.Over)
+}
+
+func (render *MapRenderer) DrawRiverBankFeature(x, y int, feat uint, biome uint8) {
+  var offset uint = 0
+  switch(feat) {
+    case TOP_LEFT_RIVER_FEATURE:
+      offset = 0
+    case TOP_RIVER_FEATURE:
+      offset = 1
+    case TOP_RIGHT_RIVER_FEATURE:
+      offset = 2
+    case LEFT_RIVER_FEATURE:
+      offset = 3
+    case RIGHT_RIVER_FEATURE:
+      offset = 4
+    case BOTTOM_LEFT_RIVER_FEATURE:
+      offset = 5
+    case BOTTOM_RIVER_FEATURE:
+      offset = 6
+    case BOTTOM_RIGHT_RIVER_FEATURE:
+      offset = 7
+    default:
+    panic("unrecognised river feature")
+  }
+  offset = feat
+  row := TILE_ROWS[biome]
+  idx := uint(row * MAX_TILE_COLUMNS + RIVER_BANK_COLUMN) + offset
+  render.DrawFeature(x, y, int(idx))
+}
+
+func (render *MapRenderer) DrawFloorTile(x, y int, biome uint8) {
+  column := TILE_COLUMNS[biome]
+  colIdx := rand.Intn(len(column))
+  row := TILE_ROWS[biome]
+  srcR := render.sprites[row * MAX_TILE_COLUMNS + column[colIdx]]
+  destR := image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
+                      x * TILE_WIDTH + TILE_WIDTH,
+                      y * TILE_HEIGHT + TILE_HEIGHT)
+  draw.Draw(render.mapImg, destR, render.spritesheet, srcR.Min, draw.Src)
+}
 
 func DrawMap(w *World, hSeed, mSeed, sSeed, fSeed, rSeed int64) {
   // First, create an overworld image that represents each tile with a single
@@ -187,171 +338,49 @@ func DrawMap(w *World, hSeed, mSeed, sSeed, fSeed, rSeed int64) {
   }
   fmt.Println("overworld image created.")
 
-  // Now use that pixel data to create the game map constructed from tiled
-  // sprites.
-  tilesheetFile, err := os.Open("outdoor_tiles.png")
-  if err != nil {
-    log.Fatal(err)
-  }
-  spritesheet, err := png.Decode(tilesheetFile)
-  if err != nil {
-    log.Fatal(err)
-  }
-  fmt.Println("opened and decoded tilesheet")
+  render := CreateMapRenderer(w.width * TILE_WIDTH, w.height * TILE_HEIGHT,
+                              MAX_TILE_COLUMNS, MAX_TILE_ROWS)
 
-  // OCEAN:       x = WATER,        y = []
-  // RIVER:       x = WATER,        y = []
-  // BEACH:       x = SAND,         y = [ROCK, SAND]
-  // DRY_ROCK:    x = SOIL,         y = [ROCK, SAND]
-  // MOIST_ROCK:  x = SAND,         y = [ROCK, DRY_SOIL, WET_SOIL, SAND]
-  // HEATHLAND:   x = DRY_GRASS,    y = [DRY_SOIL, SAND, YELLOW_FLOWERS]
-  // SHRUBLAND:   x = GRASS,        y = [ROCK, DRY_SOIL, YELLOW_FLOWERS]
-  // GRASSLAND:   x = GRASS,        y = [YELLOW_FLOWERS, WHITE_FLOWERS]
-  // MOORLAND:    x = WET_GRASS,    y = [ROCK, WET_SOIL, PURPLE_FLOWERS_0, PURPLE_FLOWERS_1 ]
-  // FENLAND:     x = WET_GRASS,    y = [WET_SOIL, WHITE_FLOWERS]
-  // WOODLAND:    x = MOIST_GRASS,  y = [ROCK, DRY_SOIL, WET_SOIL, WHITE_FLOWERS]
-  // FOREST:      x = MOIST_GRASS,  y = [WET_SOIL, SAND, PURPLE_FLOWERS_0, PURPLE_FLOWERS_1]  
-  sprites := make([]image.Rectangle, MAX_TILE_COLUMNS * MAX_TILE_ROWS)
-  for y := 0; y < MAX_TILE_ROWS; y++ {
-    for x := 0; x < MAX_TILE_COLUMNS; x++ {
-      idx := y * MAX_TILE_COLUMNS + x
-      sprites[idx] = image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
-                                x * TILE_WIDTH + TILE_WIDTH,
-                                y * TILE_HEIGHT + TILE_HEIGHT )
-    }
-  }
-
-  // Ground tiles
-  var TILE_ROWS = [...] int {
-    WATER,        // OCEAN
-    WATER,        // RIVER
-    SAND,         // BEACH
-    SAND,         // DRY_ROCK
-    ROCKS,        // WALL
-    SOIL,         // MOIST_ROCK
-    DRY_GRASS,    // HEATHLAND
-    GRASS,        // SHRUBLAND
-    GRASS,        // GRASSLAND
-    WET_GRASS,    // MOORLAND
-    WET_GRASS,    // FENLAND
-    MOIST_GRASS,  // WOODLAND
-    MOIST_GRASS,  // FOREST
-  }
-
-  var TILE_COLUMNS = [...] []int {
-    { PLAIN_0, PLAIN_1 },
-    { PLAIN_0, PLAIN_1 },
-    { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, ROCK_PATCH, SAND_PATCH },
-    { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, ROCK_PATCH, SAND_PATCH },
-    { 16, 17 },
-    { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, ROCK_PATCH, SAND_PATCH },
-    { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, DRY_SOIL_PATCH, SAND_PATCH,
-      //YELLOW_FLOWERS },
-    { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, ROCK_PATCH, DRY_SOIL_PATCH,
-      //YELLOW_FLOWERS },
-    { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, YELLOW_FLOWERS, WHITE_FLOWERS },
-    { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, ROCK_PATCH, WET_SOIL_PATCH,
-      //PURPLE_FLOWERS_0, PURPLE_FLOWERS_1 },
-    { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, WET_SOIL_PATCH, WHITE_FLOWERS },
-    { PLAIN_0, PLAIN_1 },// , PLAIN_0, PLAIN_1, ROCK_PATCH, DRY_SOIL_PATCH,
-      //WET_SOIL_PATCH, WHITE_FLOWERS },
-    { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, WET_SOIL_PATCH, SAND_PATCH,
-      //PURPLE_FLOWERS_0, PURPLE_FLOWERS_1 },
-  }
-
-  var BIOME_TREES = [...] []int {
-    { },
-    { },
-    { },
-    { LIGHT_PINE, DARK_PINE },
-    { },
-    { LIGHT_PINE, DARK_PINE },
-    { LIGHT_GREEN_ROUND, LIGHT_GREEN_ROUND_YELLOW, YELLOW_ROUND_0, YELLOW_ROUND_1,
-      TREES_END + YELLOW_ROUND_0, TREES_END + YELLOW_ROUND_1 },
-    { LIGHT_GREEN_ROUND, TREES_END + LIGHT_GREEN_ROUND,
-      TREES_END + DARK_GREEN_ROUND, TREES_END + LIGHT_GREEN_ROUND_YELLOW,
-      TREES_END + DARK_GREEN_ROUND_YELLOW },
-    { TREES_END + LIGHT_GREEN_ROUND, TREES_END + DARK_GREEN_ROUND,
-      TREES_END + LIGHT_GREEN_ROUND_WHITE, TREES_END + DARK_GREEN_ROUND_WHITE },
-    { TREES_END + DARK_PURPLE_ROUND_0, TREES_END + DARK_PURPLE_ROUND_1,
-      TREES_END + LIGHT_PURPLE_ROUND_0, TREES_END + LIGHT_PURPLE_ROUND_1 },
-    { TREES_END + LIGHT_GREEN_ROUND, TREES_END + DARK_GREEN_ROUND },
-    { LIGHT_PINE, DARK_PINE, LIGHT_GREEN_ROUND, DARK_GREEN_ROUND,
-      TREES_END + LIGHT_GREEN_ROUND, TREES_END + DARK_GREEN_ROUND },
-    { LIGHT_PINE, DARK_PINE, LIGHT_GREEN_ROUND, DARK_GREEN_ROUND },
-  }
-
-
-  mapWidth := w.width * TILE_WIDTH
-  mapHeight := w.height * TILE_HEIGHT
-  mapImg := image.NewRGBA(image.Rect(0, 0, mapWidth, mapHeight))
-  fmt.Println("mapWidth, mapHeight:", mapWidth, mapHeight)
-
-  bounds = mapImg.Bounds()
-  fmt.Println("Draw map, size:", bounds.Max.X, bounds.Max.Y)
+  bounds = render.mapImg.Bounds()
   for y := 0; y < w.height; y++ {
     for x := 0; x < w.width; x++ {
       biome := w.Biome(x, y)
-
-      column := TILE_COLUMNS[biome]
-      colIdx := rand.Intn(len(column))
-      row := TILE_ROWS[biome]
-      srcR := sprites[row * MAX_TILE_COLUMNS + column[colIdx]]
-      // Copy tile from spritesheet to mapImg
-      destR := image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
-                          x * TILE_WIDTH + TILE_WIDTH,
-                          y * TILE_HEIGHT + TILE_HEIGHT)
-      draw.Draw(mapImg, destR, spritesheet, srcR.Min, draw.Src)
-
       loc := w.Location(x, y)
+
+      if loc.isRiverBank {
+        render.DrawRiverBankFeature(x, y, loc.riverBank, biome)
+        continue;
+      }
+      if loc.isRiver {
+        render.DrawFloorTile(x, y, RIVER)
+        continue;
+      }
+
+      render.DrawFloorTile(x, y, biome)
 
       if loc.features == EMPTY {
         continue
       }
       if loc.hasFeature(RIGHT_SHADOW_FEATURE) {
-        srcR = sprites[SHADOW_ROW * MAX_TILE_COLUMNS + RIGHT_SHADOW]
-        destR = image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
-                           x * TILE_WIDTH + TILE_WIDTH,
-                           y * TILE_HEIGHT + TILE_HEIGHT)
-        draw.Draw(mapImg, destR, spritesheet, srcR.Min, draw.Over)
+        render.DrawFeature(x, y, SHADOW_ROW * MAX_TILE_COLUMNS + RIGHT_SHADOW)
       }
       if loc.hasFeature(BOTTOM_SHADOW_FEATURE) {
-        srcR = sprites[SHADOW_ROW * MAX_TILE_COLUMNS + BOTTOM_SHADOW]
-        destR = image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
-                           x * TILE_WIDTH + TILE_WIDTH,
-                           y * TILE_HEIGHT + TILE_HEIGHT)
-        draw.Draw(mapImg, destR, spritesheet, srcR.Min, draw.Over)
+        render.DrawFeature(x, y, SHADOW_ROW * MAX_TILE_COLUMNS + BOTTOM_SHADOW)
       } 
       if loc.hasFeature(LEFT_SHADOW_FEATURE) {
-        srcR = sprites[SHADOW_ROW * MAX_TILE_COLUMNS + LEFT_SHADOW]
-        destR = image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
-                           x * TILE_WIDTH + TILE_WIDTH,
-                           y * TILE_HEIGHT + TILE_HEIGHT)
-        draw.Draw(mapImg, destR, spritesheet, srcR.Min, draw.Over)
+        render.DrawFeature(x, y, SHADOW_ROW * MAX_TILE_COLUMNS + LEFT_SHADOW)
       }
       if loc.hasFeature(TOP_SHADOW_FEATURE) {
-        srcR = sprites[SHADOW_ROW * MAX_TILE_COLUMNS + TOP_SHADOW]
-        destR = image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
-                           x * TILE_WIDTH + TILE_WIDTH,
-                           y * TILE_HEIGHT + TILE_HEIGHT)
-        draw.Draw(mapImg, destR, spritesheet, srcR.Min, draw.Over)
+        render.DrawFeature(x, y, SHADOW_ROW * MAX_TILE_COLUMNS + TOP_SHADOW)
       }
       if loc.hasFeature(ROCK_FEATURE) {
         col := rand.Intn(NUM_ROCKS)
-        srcR = sprites[ROCKS * MAX_TILE_COLUMNS + col]
-        destR = image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
-                           x * TILE_WIDTH + TILE_WIDTH,
-                           y * TILE_HEIGHT + TILE_HEIGHT)
-        draw.Draw(mapImg, destR, spritesheet, srcR.Min, draw.Over)
+        render.DrawFeature(x, y, ROCKS * MAX_TILE_COLUMNS + col)
       }
       if loc.hasFeature(TREE_FEATURE) {
         trees := BIOME_TREES[biome]
         col := rand.Intn(len(trees))
-        srcR = sprites[TREES * MAX_TILE_COLUMNS + trees[col]]
-        destR = image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
-                           x * TILE_WIDTH + TILE_WIDTH,
-                           y * TILE_HEIGHT + TILE_HEIGHT)
-        draw.Draw(mapImg, destR, spritesheet, srcR.Min, draw.Over)
+        render.DrawFeature(x, y, TREES * MAX_TILE_COLUMNS + trees[col])
       }
     }
   }
@@ -360,7 +389,7 @@ func DrawMap(w *World, hSeed, mSeed, sSeed, fSeed, rSeed int64) {
   if err != nil {
     log.Fatal(err)
   }
-  if err := png.Encode(imgFile, mapImg); err != nil {
+  if err := png.Encode(imgFile, render.mapImg); err != nil {
     imgFile.Close();
     log.Fatal(err)
   }

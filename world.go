@@ -21,12 +21,12 @@ var TREE_DENSITY = [...]int {
   REGION_AREA / 512,  // DRY_ROCK
   0,                  // WALL
   REGION_AREA / 256,  // MOIST_ROCK
-  REGION_AREA / 96,   // HEATHLAND
-  REGION_AREA / 64,   // SHRUBLAND
-  REGION_AREA / 128,  // GRASSLAND
+  REGION_AREA / 64,   // HEATHLAND
+  REGION_AREA / 32,   // SHRUBLAND
+  REGION_AREA / 96,  // GRASSLAND
   REGION_AREA / 128,  // MOORLAND
   REGION_AREA / 128,  // FENLAND
-  REGION_AREA / 32,   // WOODLAND
+  REGION_AREA / 16,   // WOODLAND
   REGION_AREA / 16,   // FOREST
 }
 
@@ -51,7 +51,7 @@ const BEACH_LEVEL = WATER_LEVEL + 0.05
 const LOWLANDS = BEACH_LEVEL + 0.3
 const MIDLANDS = LOWLANDS + 0.3
 const HIGHLANDS = MIDLANDS + 0.3
-const WATER_SATURATION = 1000
+const WATER_SATURATION = 500
 const NO_SOIL = -1.5
 const DRY = -0.5
 const MOIST = 0
@@ -86,9 +86,9 @@ func CreateWorld(width, height int, hFreq, mFreq, sFreq, fFreq, rFreq,
 
   for y := 0; y < height; y++ {
     for x := 0; x < width; x++ {
-       loc := w.Location(x, y)
-       loc.x = x
-       loc.y =y
+      loc := w.Location(x, y)
+      loc.x = x
+      loc.y = y
     }
   }
   return w
@@ -102,11 +102,11 @@ func (w World) addLake(l *Location) {
   w.lakes[l] = true
 }
 
-func (w World) addFeature(x, y int, feature uint8) {
+func (w World) addFeature(x, y int, feature uint) {
   w.locations[y * w.width + x].features |= feature
 }
 
-func (w World) hasFeature(x, y int, feat uint8) bool {
+func (w World) hasFeature(x, y int, feat uint) bool {
   return w.locations[y * w.width + x].hasFeature(feat)
 }
 
@@ -213,7 +213,19 @@ func (w World) AddRivers() {
     loc.water += loc.moisture
     loc.water -= loc.soilDepth
     if loc.water > WATER_SATURATION && loc.biome != OCEAN {
-      loc.biome = RIVER
+      loc.isRiver = true
+      // Square up the water so that a body of water is a minimum of 3x3 tiles.
+      // This allows for a puddle of water to be surrounded in suitable tiles.
+      if loc.x > 1 && loc.y > 1 && loc.x + 1 < w.width && loc.y + 1 < w.height {
+        for x := -1; x < 2; x++ {
+          for y := -1; y < 2; y++ {
+            adjLoc := w.Location(loc.x + x, loc.y + y)
+            if adjLoc.biome != OCEAN {
+              adjLoc.isRiver = true
+            }
+          }
+        }
+      }
     }
 
     // Discover all of the Location's successors and add them to the queue if
@@ -226,6 +238,65 @@ func (w World) AddRivers() {
       }
     }
   }
+}
+
+func (w World) AddRiverBanks(xBegin, xEnd int, c chan int) {
+  
+  for y := 0; y < w.height; y ++ {
+    for x := xBegin; x < xEnd; x ++ {
+      loc := w.Location(x, y);
+      if !loc.isRiver {
+        continue;
+      }
+      N := false
+      E := false
+      S := false
+      W := false
+
+      if y > 0 {
+        N = !w.Location(x, y - 1).isRiver
+      }
+      if y < w.height - 1 {
+        S = !w.Location(x, y + 1).isRiver
+      }
+      if x > 0 {
+        W = !w.Location(x - 1, y).isRiver
+      }
+      if x < w.width - 1 {
+        E = !w.Location(x + 1, y).isRiver
+      }
+
+      // Location == land:
+      // N and W = TL
+      // N and E = TR
+      // N = T
+      // S and W = BL
+      // S and E = BR
+      // S = B
+      // E = R
+      // W = L
+      if !N && !S && !E && !W {
+        continue;
+      } else if N && W {
+        loc.setRiverBank(TOP_LEFT_RIVER_FEATURE)
+      } else if N && E {
+        loc.setRiverBank(TOP_RIGHT_RIVER_FEATURE)
+      } else if N {
+        loc.setRiverBank(TOP_RIVER_FEATURE)
+      } else if S && W {
+        loc.setRiverBank(BOTTOM_LEFT_RIVER_FEATURE)
+      } else if S && E {
+        loc.setRiverBank(BOTTOM_RIGHT_RIVER_FEATURE)
+      } else if S {
+        loc.setRiverBank(BOTTOM_RIVER_FEATURE)
+      } else if E {
+        loc.setRiverBank(RIGHT_RIVER_FEATURE)
+      } else if W {
+        loc.setRiverBank(LEFT_RIVER_FEATURE)
+      }
+    }
+  }
+  c <-1 
 }
 
 func (w World) AnalyseRegions(xBegin, xEnd int, c chan int) {
@@ -255,7 +326,8 @@ func (w World) AnalyseRegions(xBegin, xEnd int, c chan int) {
           rock := 0.0
           biome := w.Biome(rx, ry)
           biomeCount[biome]++
-          if biome != OCEAN && biome != BEACH && biome != RIVER && biome != WALL {
+          if biome != OCEAN && biome != BEACH && biome != WALL &&
+             !w.Location(rx, ry).isRiver {
             foliage = w.Foliage(rx, ry)
           }
           if biome != WALL {
@@ -306,10 +378,10 @@ func (w World) CalcGradient(c chan int) {
 
       if y - 1 >= 0 {
         otherLoc := w.Location(x, y - 1)
-        if otherLoc.height < centreLoc.height {
+        if otherLoc.height <= centreLoc.height {
           centreLoc.addSuccessor(otherLoc)
           hasSuccessor = true
-        } else if otherLoc.height > centreLoc.height {
+        } else if otherLoc.height >= centreLoc.height {
           centreLoc.addPredecessor(otherLoc)
           hasPredecessor = true
           if otherLoc.terrace > centreLoc.terrace {
@@ -320,10 +392,10 @@ func (w World) CalcGradient(c chan int) {
 
       if x + 1 < width {
         otherLoc := w.Location(x + 1, y)
-        if otherLoc.height < centreLoc.height {
+        if otherLoc.height <= centreLoc.height {
           centreLoc.addSuccessor(otherLoc)
           hasSuccessor = true
-        } else if otherLoc.height > centreLoc.height {
+        } else if otherLoc.height >= centreLoc.height {
           centreLoc.addPredecessor(otherLoc)
           hasPredecessor = true
           if otherLoc.terrace > centreLoc.terrace {
@@ -334,10 +406,10 @@ func (w World) CalcGradient(c chan int) {
 
       if y + 1 < height {
         otherLoc := w.Location(x, y + 1)
-        if otherLoc.height < centreLoc.height {
+        if otherLoc.height <= centreLoc.height {
           centreLoc.addSuccessor(otherLoc)
           hasSuccessor = true
-        } else if otherLoc.height > centreLoc.height {
+        } else if otherLoc.height >= centreLoc.height {
           centreLoc.addPredecessor(otherLoc)
           hasPredecessor = true
           if otherLoc.terrace > centreLoc.terrace {
@@ -348,10 +420,10 @@ func (w World) CalcGradient(c chan int) {
 
       if x - 1 >= 0 {
         otherLoc := w.Location(x - 1, y)
-        if otherLoc.height < centreLoc.height {
+        if otherLoc.height <= centreLoc.height {
           centreLoc.addSuccessor(otherLoc)
           hasSuccessor = true
-        } else if otherLoc.height > centreLoc.height {
+        } else if otherLoc.height >= centreLoc.height {
           centreLoc.addPredecessor(otherLoc)
           hasPredecessor = true
           if otherLoc.terrace > centreLoc.terrace {
@@ -537,7 +609,7 @@ func GenerateMap(hFreq, mFreq, sFreq, fFreq, rFreq float64,
   fNoise := opensimplex.NewWithSeed(fSeed)
   rNoise := opensimplex.NewWithSeed(rSeed)
 
-  world := CreateWorld(width, height, hFreq, mFreq, sFreq, fFreq, rFreq, 0.5)
+  world := CreateWorld(width, height, hFreq, mFreq, sFreq, fFreq, rFreq, 10)
 
   start := time.Now()
 
@@ -584,6 +656,15 @@ func GenerateMap(hFreq, mFreq, sFreq, fFreq, rFreq float64,
   }
 
   world.AddRivers()
+
+  c = make(chan int, numCPUs)
+  for i := 0; i < numCPUs; i++ {
+    go world.AddRiverBanks(i * width / numCPUs,
+                           (i + 1) * width / numCPUs, c)
+  }
+  for i := 0; i < numCPUs; i++ {
+    <-c
+  }
 
   c = make(chan int, numCPUs)
   for i := 0; i < numCPUs; i++ {

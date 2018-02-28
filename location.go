@@ -4,10 +4,22 @@ const (
   EMPTY = 0
   TREE_FEATURE = 1
   ROCK_FEATURE = 1 << 1
+
   RIGHT_SHADOW_FEATURE = 1 << 2
   BOTTOM_SHADOW_FEATURE = 1 << 3
   TOP_SHADOW_FEATURE = 1 << 4
   LEFT_SHADOW_FEATURE = 1 << 5
+)
+
+const (
+  TOP_LEFT_RIVER_FEATURE = iota
+  TOP_RIVER_FEATURE
+  TOP_RIGHT_RIVER_FEATURE
+  LEFT_RIVER_FEATURE
+  RIGHT_RIVER_FEATURE
+  BOTTOM_LEFT_RIVER_FEATURE
+  BOTTOM_RIVER_FEATURE
+  BOTTOM_RIGHT_RIVER_FEATURE
 )
 
 const (
@@ -136,7 +148,11 @@ type Location struct {
   totalGradient float64
   discovered, weight int
   x, y int
-  biome, features, terrace uint8
+  biome, terrace uint8
+  features uint
+  isRiverBank bool
+  isRiver bool
+  riverBank uint
 }
 
 func (l *Location) addSuccessor(other *Location) {
@@ -149,12 +165,17 @@ func (l *Location) addPredecessor(other *Location) {
   l.numPreds = l.numPreds + 1
 }
 
-func (l *Location) addFeature(feat uint8) {
+func (l *Location) addFeature(feat uint) {
   l.features |= feat
 }
 
-func (l *Location) hasFeature(feat uint8) bool {
+func (l *Location) hasFeature(feat uint) bool {
   return feat & l.features == feat
+}
+
+func (l *Location) setRiverBank(feat uint) {
+  l.isRiverBank = true
+  l.riverBank = feat
 }
 
 type LocVal struct {
