@@ -289,7 +289,57 @@ func (render *MapRenderer) DrawFloorTile(x, y int, biome uint8) {
   draw.Draw(render.mapImg, destR, render.spritesheet, srcR.Min, draw.Src)
 }
 
-func DrawMap(w *World, hSeed, mSeed, sSeed, fSeed, rSeed int64) {
+func (render *MapRenderer) ParallelDraw(w *World, xBegin, xEnd int, c chan int) {
+  for y := 0; y < w.height; y++ {
+    for x := xBegin; x < xEnd; x++ {
+      biome := w.Biome(x, y)
+      loc := w.Location(x, y)
+
+      if loc.isRiverBank {
+        // OCEAN tiles don't have edge tiles, so use BEACH ones.
+        if biome == OCEAN {
+          biome = BEACH
+        }
+        render.DrawRiverBankFeature(x, y, loc.riverBank, biome)
+        continue;
+      }
+      if loc.isRiver {
+        render.DrawFloorTile(x, y, RIVER)
+        continue;
+      }
+
+      render.DrawFloorTile(x, y, biome)
+
+      if loc.features == EMPTY {
+        continue
+      }
+      if loc.hasFeature(RIGHT_SHADOW_FEATURE) {
+        render.DrawFeature(x, y, SHADOW_ROW * MAX_TILE_COLUMNS + RIGHT_SHADOW)
+      }
+      if loc.hasFeature(BOTTOM_SHADOW_FEATURE) {
+        render.DrawFeature(x, y, SHADOW_ROW * MAX_TILE_COLUMNS + BOTTOM_SHADOW)
+      } 
+      if loc.hasFeature(LEFT_SHADOW_FEATURE) {
+        render.DrawFeature(x, y, SHADOW_ROW * MAX_TILE_COLUMNS + LEFT_SHADOW)
+      }
+      if loc.hasFeature(TOP_SHADOW_FEATURE) {
+        render.DrawFeature(x, y, SHADOW_ROW * MAX_TILE_COLUMNS + TOP_SHADOW)
+      }
+      if loc.hasFeature(ROCK_FEATURE) {
+        col := rand.Intn(NUM_ROCKS)
+        render.DrawFeature(x, y, ROCKS * MAX_TILE_COLUMNS + col)
+      }
+      if loc.hasFeature(TREE_FEATURE) {
+        trees := BIOME_TREES[biome]
+        col := rand.Intn(len(trees))
+        render.DrawFeature(x, y, TREES * MAX_TILE_COLUMNS + trees[col])
+      }
+    }
+  }
+  c <- 1
+}
+
+func DrawMap(w *World, hSeed, mSeed, sSeed, fSeed, rSeed int64, numCPUs int) {
   // First, create an overworld image that represents each tile with a single
   // pixel.
   overworld := image.NewRGBA(image.Rect(0, 0, w.width, w.height))
@@ -341,54 +391,20 @@ func DrawMap(w *World, hSeed, mSeed, sSeed, fSeed, rSeed int64) {
   render := CreateMapRenderer(w.width * TILE_WIDTH, w.height * TILE_HEIGHT,
                               MAX_TILE_COLUMNS, MAX_TILE_ROWS)
 
-  bounds = render.mapImg.Bounds()
-  for y := 0; y < w.height; y++ {
-    for x := 0; x < w.width; x++ {
-      biome := w.Biome(x, y)
-      loc := w.Location(x, y)
-
-      if loc.isRiverBank {
-        render.DrawRiverBankFeature(x, y, loc.riverBank, biome)
-        continue;
-      }
-      if loc.isRiver {
-        render.DrawFloorTile(x, y, RIVER)
-        continue;
-      }
-
-      render.DrawFloorTile(x, y, biome)
-
-      if loc.features == EMPTY {
-        continue
-      }
-      if loc.hasFeature(RIGHT_SHADOW_FEATURE) {
-        render.DrawFeature(x, y, SHADOW_ROW * MAX_TILE_COLUMNS + RIGHT_SHADOW)
-      }
-      if loc.hasFeature(BOTTOM_SHADOW_FEATURE) {
-        render.DrawFeature(x, y, SHADOW_ROW * MAX_TILE_COLUMNS + BOTTOM_SHADOW)
-      } 
-      if loc.hasFeature(LEFT_SHADOW_FEATURE) {
-        render.DrawFeature(x, y, SHADOW_ROW * MAX_TILE_COLUMNS + LEFT_SHADOW)
-      }
-      if loc.hasFeature(TOP_SHADOW_FEATURE) {
-        render.DrawFeature(x, y, SHADOW_ROW * MAX_TILE_COLUMNS + TOP_SHADOW)
-      }
-      if loc.hasFeature(ROCK_FEATURE) {
-        col := rand.Intn(NUM_ROCKS)
-        render.DrawFeature(x, y, ROCKS * MAX_TILE_COLUMNS + col)
-      }
-      if loc.hasFeature(TREE_FEATURE) {
-        trees := BIOME_TREES[biome]
-        col := rand.Intn(len(trees))
-        render.DrawFeature(x, y, TREES * MAX_TILE_COLUMNS + trees[col])
-      }
-    }
+  c := make(chan int, numCPUs)
+  for i := 0; i < numCPUs; i++ {
+    go render.ParallelDraw(w, i * w.width / numCPUs, (i + 1) * w.width / numCPUs, c)
   }
+  for i := 0; i < numCPUs; i++ {
+    <-c
+  }
+  fmt.Println("Detailed map rendered in memory.")
 
   imgFile, err = os.Create("world-map.png")
   if err != nil {
     log.Fatal(err)
   }
+  fmt.Println("Encoding detailed map...")
   if err := png.Encode(imgFile, render.mapImg); err != nil {
     imgFile.Close();
     log.Fatal(err)
@@ -396,6 +412,7 @@ func DrawMap(w *World, hSeed, mSeed, sSeed, fSeed, rSeed int64) {
   if err := imgFile.Close(); err != nil {
     log.Fatal(err)
   }
+  fmt.Println("Done!")
 
 }
 

@@ -240,12 +240,35 @@ func (w World) AddRivers() {
   }
 }
 
+// Look around each tile, recording the number of tiles which differ from its
+// biome. The most often occuring differing biome can be used to overlay a
+// tile as a feature. Skip OCEAN, RIVER and WALL tiles as positions to begin
+// the search. Also dismiss OCEAN and RIVER tiles during the search and don't
+// try to diffuse biome that are in different terraces.
+func (w World) AddTileDiffuse(xBegin, xEnd int, c chan int) {
+  /*
+  OCEAN
+  RIVER
+  BEACH
+  DRY_ROCK
+  WALL
+  MOIST_ROCK
+  HEATHLAND
+  SHRUBLAND
+  GRASSLAND
+  MOORLAND
+  FENLAND
+  WOODLAND
+  FOREST
+  */
+}
+
 func (w World) AddRiverBanks(xBegin, xEnd int, c chan int) {
   
   for y := 0; y < w.height; y ++ {
     for x := xBegin; x < xEnd; x ++ {
       loc := w.Location(x, y);
-      if !loc.isRiver {
+      if !loc.isRiver && loc.biome != OCEAN {
         continue;
       }
       N := false
@@ -254,16 +277,20 @@ func (w World) AddRiverBanks(xBegin, xEnd int, c chan int) {
       W := false
 
       if y > 0 {
-        N = !w.Location(x, y - 1).isRiver
+        biome := w.Location(x, y - 1).biome
+        N = !w.Location(x, y - 1).isRiver && biome != OCEAN 
       }
       if y < w.height - 1 {
-        S = !w.Location(x, y + 1).isRiver
+        biome := w.Location(x, y + 1).biome
+        S = !w.Location(x, y + 1).isRiver && biome != OCEAN
       }
       if x > 0 {
-        W = !w.Location(x - 1, y).isRiver
+        biome := w.Location(x - 1, y).biome
+        W = !w.Location(x - 1, y).isRiver && biome != OCEAN
       }
       if x < w.width - 1 {
-        E = !w.Location(x + 1, y).isRiver
+        biome := w.Location(x + 1, y).biome
+        E = !w.Location(x + 1, y).isRiver && biome != OCEAN
       }
 
       // Location == land:
@@ -680,7 +707,7 @@ func GenerateMap(hFreq, mFreq, sFreq, fFreq, rFreq float64,
   fmt.Println("Number of peaks: ", len(world.peaks));
   fmt.Println("Numer of lakes: ", len(world.lakes));
 
-  DrawMap(world, hSeed, mSeed, sSeed, fSeed, rSeed)
+  DrawMap(world, hSeed, mSeed, sSeed, fSeed, rSeed, numCPUs)
 }
 
 func main() {
