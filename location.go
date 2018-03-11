@@ -9,6 +9,8 @@ const (
   BOTTOM_SHADOW_FEATURE = 1 << 3
   TOP_SHADOW_FEATURE = 1 << 4
   LEFT_SHADOW_FEATURE = 1 << 5
+
+  GROUND_FEATURE = 1 << 6
 )
 
 const (
@@ -148,7 +150,7 @@ type Location struct {
   totalGradient float64
   discovered, weight int
   x, y int
-  biome, terrace uint8
+  biome, nearbyBiome, terrace uint8
   features uint
   isRiverBank bool
   isRiver bool

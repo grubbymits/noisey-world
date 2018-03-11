@@ -245,7 +245,7 @@ func (w World) AddRivers() {
 // tile as a feature. Skip OCEAN, RIVER and WALL tiles as positions to begin
 // the search. Also dismiss OCEAN and RIVER tiles during the search and don't
 // try to diffuse biome that are in different terraces.
-func (w World) AddTileDiffuse(xBegin, xEnd int, c chan int) {
+func (w World) AddGroundFeature(xBegin, xEnd int, c chan int) {
   /*
   OCEAN
   RIVER
@@ -261,6 +261,51 @@ func (w World) AddTileDiffuse(xBegin, xEnd int, c chan int) {
   WOODLAND
   FOREST
   */
+  for y := 0; y < w.height; y++ {
+    for x := xBegin; x < xEnd; x++ {
+      loc := w.Location(x, y);
+      if loc.isRiver || loc.isRiverBank || loc.biome == OCEAN ||
+        loc.biome == WALL || loc.biome == BEACH {
+        continue
+      }
+
+      var biomes [BIOMES]uint
+      for dx := -1; dx < 2; dx++ {
+        for dy := -1; dy < 2; dy++ {
+          if dx == 0 && dy == 0 {
+            continue
+          }
+
+          if x + dx >= w.width || x + dx < 0 {
+            continue
+          }
+          if y + dy >= w.height || y + dy < 0 {
+            continue
+          }
+
+          otherLoc := w.Location(x + dx, y + dy)
+          if otherLoc.isRiver || otherLoc.biome == OCEAN ||
+            otherLoc.terrace != loc.terrace || otherLoc.biome == loc.biome {
+            continue
+          }
+          biomes[otherLoc.biome]++
+        }
+      }
+      var largest uint = 0
+      var biome uint8 = 0
+      for i, val := range biomes {
+        if val > largest {
+          largest = val
+          biome = uint8(i)
+        }
+      }
+      if biome != 0 && biome != loc.biome {
+        loc.addFeature(GROUND_FEATURE)
+        loc.nearbyBiome = biome
+      }
+    }
+  }
+  c <- 1
 }
 
 func (w World) AddRiverBanks(xBegin, xEnd int, c chan int) {
@@ -688,6 +733,15 @@ func GenerateMap(hFreq, mFreq, sFreq, fFreq, rFreq float64,
   for i := 0; i < numCPUs; i++ {
     go world.AddRiverBanks(i * width / numCPUs,
                            (i + 1) * width / numCPUs, c)
+  }
+  for i := 0; i < numCPUs; i++ {
+    <-c
+  }
+
+  c = make(chan int, numCPUs)
+  for i := 0; i < numCPUs; i++ {
+    go world.AddGroundFeature(i * width / numCPUs,
+                              (i + 1) * width / numCPUs, c)
   }
   for i := 0; i < numCPUs; i++ {
     <-c

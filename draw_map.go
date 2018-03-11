@@ -63,6 +63,7 @@ const (
   _
   _
   _
+  _
   MAX_TILE_COLUMNS
 )
 
@@ -102,6 +103,7 @@ const (
 const LIGHT_PINE = TREES_END * 2
 const DARK_PINE = LIGHT_PINE + 1
 const RIVER_BANK_COLUMN = 10
+const GROUND_FEATURE_COLUMN = 18
 
 const TILE_WIDTH = 16
 const TILE_HEIGHT = 16
@@ -278,6 +280,12 @@ func (render *MapRenderer) DrawRiverBankFeature(x, y int, feat uint, biome uint8
   render.DrawFeature(x, y, int(idx))
 }
 
+func (render *MapRenderer) DrawGroundFeature(x, y int, biome uint8) {
+  column := GROUND_FEATURE_COLUMN
+  row := TILE_ROWS[biome]
+  render.DrawFeature(x, y, row * MAX_TILE_COLUMNS + column)
+}
+
 func (render *MapRenderer) DrawFloorTile(x, y int, biome uint8) {
   column := TILE_COLUMNS[biome]
   colIdx := rand.Intn(len(column))
@@ -312,6 +320,9 @@ func (render *MapRenderer) ParallelDraw(w *World, xBegin, xEnd int, c chan int) 
 
       if loc.features == EMPTY {
         continue
+      }
+      if loc.hasFeature(GROUND_FEATURE) {
+        render.DrawGroundFeature(x, y, loc.nearbyBiome)
       }
       if loc.hasFeature(RIGHT_SHADOW_FEATURE) {
         render.DrawFeature(x, y, SHADOW_ROW * MAX_TILE_COLUMNS + RIGHT_SHADOW)
@@ -379,7 +390,10 @@ func DrawMap(w *World, hSeed, mSeed, sSeed, fSeed, rSeed int64, numCPUs int) {
   if err != nil {
     log.Fatal(err)
   }
-  if err := png.Encode(imgFile, overworld); err != nil {
+
+  enc := &png.Encoder { CompressionLevel: png.BestSpeed, }
+
+  if err := enc.Encode(imgFile, overworld); err != nil {
     imgFile.Close();
     log.Fatal(err)
   }
@@ -405,7 +419,7 @@ func DrawMap(w *World, hSeed, mSeed, sSeed, fSeed, rSeed int64, numCPUs int) {
     log.Fatal(err)
   }
   fmt.Println("Encoding detailed map...")
-  if err := png.Encode(imgFile, render.mapImg); err != nil {
+  if err := enc.Encode(imgFile, render.mapImg); err != nil {
     imgFile.Close();
     log.Fatal(err)
   }
