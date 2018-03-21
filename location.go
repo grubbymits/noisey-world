@@ -29,7 +29,6 @@ const (
   RIVER
   BEACH
   DRY_ROCK
-  WALL
   MOIST_ROCK
   HEATHLAND
   SHRUBLAND
@@ -154,6 +153,7 @@ type Location struct {
   features uint
   isRiverBank bool
   isRiver bool
+  isWall bool
   riverBank uint
 }
 

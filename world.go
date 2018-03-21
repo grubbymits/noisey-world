@@ -19,7 +19,6 @@ var TREE_DENSITY = [...]int {
   0,  // RIVER
   REGION_SIZE / 1024,  // BEACH
   REGION_AREA / 512,  // DRY_ROCK
-  0,                  // WALL
   REGION_AREA / 256,  // MOIST_ROCK
   REGION_AREA / 64,   // HEATHLAND
   REGION_AREA / 32,   // SHRUBLAND
@@ -35,7 +34,6 @@ var ROCK_DENSITY = [...]int {
   REGION_SIZE / 32,   // RIVER
   REGION_SIZE / 32,   // BEACH
   REGION_AREA / 16,   // DRY_ROCK
-  0,                  // WALL
   REGION_AREA / 16,   // MOIST_ROCK
   REGION_AREA / 1024, // HEATHLAND
   REGION_AREA / 512,  // SHRUBLAND
@@ -251,7 +249,6 @@ func (w World) AddGroundFeature(xBegin, xEnd int, c chan int) {
   RIVER
   BEACH
   DRY_ROCK
-  WALL
   MOIST_ROCK
   HEATHLAND
   SHRUBLAND
@@ -264,8 +261,8 @@ func (w World) AddGroundFeature(xBegin, xEnd int, c chan int) {
   for y := 0; y < w.height; y++ {
     for x := xBegin; x < xEnd; x++ {
       loc := w.Location(x, y);
-      if loc.isRiver || loc.isRiverBank || loc.biome == OCEAN ||
-        loc.biome == WALL || loc.biome == BEACH {
+      if loc.isRiver || loc.isRiverBank || loc.isWall  || loc.biome == OCEAN ||
+        loc.biome == BEACH {
         continue
       }
 
@@ -398,11 +395,11 @@ func (w World) AnalyseRegions(xBegin, xEnd int, c chan int) {
           rock := 0.0
           biome := w.Biome(rx, ry)
           biomeCount[biome]++
-          if biome != OCEAN && biome != BEACH && biome != WALL &&
-             !w.Location(rx, ry).isRiver {
+          if biome != OCEAN && biome != BEACH &&
+             !w.Location(rx, ry).isRiver && !w.Location(rx, y).isWall {
             foliage = w.Foliage(rx, ry)
           }
-          if biome != WALL {
+          if !w.Location(rx, ry).isWall {
             rock = w.Rock(rx, ry)
           }
           treeHeap[i] = &LocVal{ i, rx, ry, foliage }
@@ -610,8 +607,7 @@ func (w World) CalcBiome(xBegin, xEnd int, c chan int) {
   for y := 1; y < height; y++ {
     for x := xBegin; x < xEnd; x++ {
       if w.Terrace(x, y - 1) > w.Terrace(x, y) {
-        w.SetBiome(x, y - 1, WALL)
-        //w.SetBiome(x, y, WALL)
+        w.Location(x, y - 1).isWall = true;
       }
       w.SetBiome(x, y, biome(w.Height(x, y), w.Moisture(x, y),
                  w.SoilDepth(x, y)))

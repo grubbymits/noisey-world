@@ -12,61 +12,7 @@ import (
   "strconv"
 )
 
-// Rows:
-// rocks 5
-// water 6
-// soil 7
-// sand 8
-// wet grass 9
-// moist grass 10
-// grass 11
-// dry grass 12
-const (
-  PLANTS = iota
-  TREES
-  _
-  _
-  _
-  ROCKS
-  WATER
-  SOIL
-  SAND
-  WET_GRASS
-  MOIST_GRASS
-  GRASS
-  DRY_GRASS
-  _
-  _
-  GREY_PATH
-  MAX_TILE_ROWS
-)
-
-const NUM_ROCKS = 8
-const NUM_TREES = 4
-
-const (
-  PLAIN_0 = iota
-  PLAIN_1
-  ROCK_PATCH
-  DRY_SOIL_PATCH
-  WET_SOIL_PATCH
-  SAND_PATCH
-  YELLOW_FLOWERS
-  WHITE_FLOWERS
-  PURPLE_FLOWERS_0
-  PURPLE_FLOWERS_1
-  _
-  _
-  _
-  _
-  _
-  _
-  _
-  _
-  _
-  MAX_TILE_COLUMNS
-)
-
+/*
 const SHADOW_ROW = GREY_PATH
 const (
   RIGHT_SHADOW = 14
@@ -104,17 +50,47 @@ const LIGHT_PINE = TREES_END * 2
 const DARK_PINE = LIGHT_PINE + 1
 const RIVER_BANK_COLUMN = 10
 const GROUND_FEATURE_COLUMN = 18
-
+*/
 const TILE_WIDTH = 16
 const TILE_HEIGHT = 16
 
-// Ground tiles
+// Floor tile rows
+const (
+  SOIL = iota
+  SAND
+  WET_GRASS
+  MOIST_GRASS
+  GRASS
+  DRY_GRASS
+  ROCK
+  WATER
+  MAX_TILE_ROWS
+)
+
+// Floor tile columns
+const (
+  PLAIN_0 = iota
+  PLAIN_1
+  TOP_LEFT_WATER
+  TOP_WATER
+  TOP_RIGHT_WATER
+  LEFT_WATER
+  RIGHT_WATER
+  BOTTOM_LEFT_WATER
+  BOTTOM_WATER
+  BOTTOM_RIGHT_WATER
+  WALL_0
+  WALL_1
+  BLEND
+  MAX_TILE_COLUMNS
+)
+
+// Ground tiles row for each biome.
 var TILE_ROWS = [...] int {
   WATER,        // OCEAN
   WATER,        // RIVER
   SAND,         // BEACH
-  SAND,         // DRY_ROCK
-  ROCKS,        // WALL
+  ROCK,         // DRY_ROCK
   SOIL,         // MOIST_ROCK
   DRY_GRASS,    // HEATHLAND
   GRASS,        // SHRUBLAND
@@ -125,27 +101,24 @@ var TILE_ROWS = [...] int {
   MOIST_GRASS,  // FOREST
 }
 
+// Columns choices for standard floor tiles for each biome.
 var TILE_COLUMNS = [...] []int {
   { PLAIN_0, PLAIN_1 },
   { PLAIN_0, PLAIN_1 },
-  { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, ROCK_PATCH, SAND_PATCH },
-  { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, ROCK_PATCH, SAND_PATCH },
-  { 16, 17 },
-  { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, ROCK_PATCH, SAND_PATCH },
-  { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, DRY_SOIL_PATCH, SAND_PATCH,
-  //YELLOW_FLOWERS },
-  { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, ROCK_PATCH, DRY_SOIL_PATCH,
-  //YELLOW_FLOWERS },
-  { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, YELLOW_FLOWERS, WHITE_FLOWERS },
-  { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, ROCK_PATCH, WET_SOIL_PATCH,
-  //PURPLE_FLOWERS_0, PURPLE_FLOWERS_1 },
-  { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, WET_SOIL_PATCH, WHITE_FLOWERS },
-  { PLAIN_0, PLAIN_1 },// , PLAIN_0, PLAIN_1, ROCK_PATCH, DRY_SOIL_PATCH,
-  //WET_SOIL_PATCH, WHITE_FLOWERS },
-  { PLAIN_0, PLAIN_1 }, //, PLAIN_0, PLAIN_1, WET_SOIL_PATCH, SAND_PATCH,
-  //PURPLE_FLOWERS_0, PURPLE_FLOWERS_1 },
+  { PLAIN_0, PLAIN_1 },
+  { PLAIN_0, PLAIN_1 },
+  { PLAIN_0, PLAIN_1 },
+  { PLAIN_0, PLAIN_1 },
+  { PLAIN_0, PLAIN_1 },
+  { PLAIN_0, PLAIN_1 },
+  { PLAIN_0, PLAIN_1 },
+  { PLAIN_0, PLAIN_1 },
+  { PLAIN_0, PLAIN_1 },
+  { PLAIN_0, PLAIN_1 },
+  { PLAIN_0, PLAIN_1 },
 }
 
+/*
 var BIOME_TREES = [...] []int {
   { },  // OCEAN
   { },  // RIVER
@@ -167,38 +140,7 @@ var BIOME_TREES = [...] []int {
     TREES_END + LIGHT_GREEN_ROUND, TREES_END + DARK_GREEN_ROUND },  // WOODLAND
   { LIGHT_PINE, DARK_PINE, LIGHT_GREEN_ROUND, DARK_GREEN_ROUND },   // FOREST
 }
-
-// floor tiles columns:
-// - normal, normal = 0, 1
-// - rock = 2
-// - dry dirt / grass = 3
-// - wet dirt / grass = 4
-// - sand = 5
-// - yellow flowers = 6
-// - white flowers = 7
-// - purple flowers = 8, 9
-// - top left water = 10
-// - top water = 11
-// - top right water = 12
-// - left water = 13
-// - right water = 14
-// - bottom left water = 15
-// - bottom water = 16
-// - bottom right water = 17
-
-// OCEAN - water
-// RIVER - water
-// BEACH - sand
-// DRY_ROCK - sand, sand with rock
-// WALL - rock
-// MOIST_ROCK - sand, sand with soil, sand with grass
-// HEATHLAND - dry grass, dry grass with yellow flowers, dry grass with sand
-// SHRUBLAND - moist grass, moist grass with moist and wet soil
-// GRASSLAND - grass, grass with yellow and white flowers
-// MOORLAND - wet grass, wet grass with wet soil, wet grass with purple
-// FENLAND - wet grass
-// WOODLAND - grass, grass with rock, grass with soils
-// FOREST - soil, soil with grass, soil wet grass
+*/
 
 type MapRenderer struct {
   mapWidth, mapHeight, tileWidth, tileHeight, tileColumns, tileRows int
@@ -211,7 +153,7 @@ func CreateMapRenderer(width, height, cols, rows int) *MapRenderer {
 
   // Now use that pixel data to create the game map constructed from tiled
   // sprites.
-  tilesheetFile, err := os.Open("outdoor_tiles.png")
+  tilesheetFile, err := os.Open("outdoor_floor_tiles.png")
   if err != nil {
     log.Fatal(err)
   }
@@ -253,38 +195,40 @@ func (renderer *MapRenderer) DrawFeature(x, y, idx int) {
 }
 
 func (render *MapRenderer) DrawRiverBankFeature(x, y int, feat uint, biome uint8) {
-  var offset uint = 0
+  var col int = 0
   switch(feat) {
     case TOP_LEFT_RIVER_FEATURE:
-      offset = 0
+      col = TOP_LEFT_WATER
     case TOP_RIVER_FEATURE:
-      offset = 1
+      col = TOP_WATER
     case TOP_RIGHT_RIVER_FEATURE:
-      offset = 2
+      col = TOP_RIGHT_WATER
     case LEFT_RIVER_FEATURE:
-      offset = 3
+      col = LEFT_WATER
     case RIGHT_RIVER_FEATURE:
-      offset = 4
+      col = RIGHT_WATER
     case BOTTOM_LEFT_RIVER_FEATURE:
-      offset = 5
+      col = BOTTOM_LEFT_WATER
     case BOTTOM_RIVER_FEATURE:
-      offset = 6
+      col = BOTTOM_WATER
     case BOTTOM_RIGHT_RIVER_FEATURE:
-      offset = 7
+      col = BOTTOM_RIGHT_WATER
     default:
     panic("unrecognised river feature")
   }
-  offset = feat
+  //offset = feat
   row := TILE_ROWS[biome]
-  idx := uint(row * MAX_TILE_COLUMNS + RIVER_BANK_COLUMN) + offset
-  render.DrawFeature(x, y, int(idx))
+  idx := row * MAX_TILE_COLUMNS + col
+  render.DrawFeature(x, y, idx)
 }
 
+/*
 func (render *MapRenderer) DrawGroundFeature(x, y int, biome uint8) {
   column := GROUND_FEATURE_COLUMN
   row := TILE_ROWS[biome]
   render.DrawFeature(x, y, row * MAX_TILE_COLUMNS + column)
 }
+*/
 
 func (render *MapRenderer) DrawFloorTile(x, y int, biome uint8) {
   column := TILE_COLUMNS[biome]
@@ -309,15 +253,21 @@ func (render *MapRenderer) ParallelDraw(w *World, xBegin, xEnd int, c chan int) 
           biome = BEACH
         }
         render.DrawRiverBankFeature(x, y, loc.riverBank, biome)
-        continue;
+        continue
+      }
+      if loc.isWall {
+        row := TILE_ROWS[biome]
+        render.DrawFeature(x, y, row * MAX_TILE_COLUMNS + WALL_0)
+        continue
       }
       if loc.isRiver {
         render.DrawFloorTile(x, y, RIVER)
-        continue;
+        continue
       }
 
       render.DrawFloorTile(x, y, biome)
 
+      /*
       if loc.features == EMPTY {
         continue
       }
@@ -345,6 +295,7 @@ func (render *MapRenderer) ParallelDraw(w *World, xBegin, xEnd int, c chan int) 
         col := rand.Intn(len(trees))
         render.DrawFeature(x, y, TREES * MAX_TILE_COLUMNS + trees[col])
       }
+      */
     }
   }
   c <- 1
@@ -358,7 +309,6 @@ func DrawMap(w *World, hSeed, mSeed, sSeed, fSeed, rSeed int64, numCPUs int) {
                                 { 0, 102, 102, 255 },   // RIVER
                                 { 255, 230, 128, 255 }, // BEACH
                                 { 204, 204, 204, 255 }, // DRY_ROCK
-                                { 204, 204, 204, 255 }, // WALL
                                 { 166, 166, 166, 255 }, // MOIST_ROCK
                                 { 202, 218, 114, 255 }, // HEATHLAND
                                 { 128, 153, 51, 255 },  // SHRUBLAND
