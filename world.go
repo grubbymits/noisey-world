@@ -49,7 +49,7 @@ const BEACH_LEVEL = WATER_LEVEL + 0.05
 const LOWLANDS = BEACH_LEVEL + 0.3
 const MIDLANDS = LOWLANDS + 0.3
 const HIGHLANDS = MIDLANDS + 0.3
-const WATER_SATURATION = 500
+const WATER_SATURATION = 100
 const NO_SOIL = -1.5
 const DRY = -0.5
 const MOIST = 0
@@ -174,13 +174,88 @@ func (w World) SetBiome(x, y int, b uint8) {
   w.locations[y * w.width + x].biome = b
 }
 
+func (w World) isRiverValid(centre *Location) bool {
+  if centre.biome == OCEAN {
+    return false
+  }
+  if centre.x <= 0 || centre.y <= 0 ||
+     centre.x + 1 >= w.width || centre.y + 1 >= w.height {
+    return false
+  }
+
+  for x := -1; x < 2; x++ {
+    for y := -1; y < 2; y++ {
+      loc := w.Location(centre.x + x, centre.y + y)
+
+      if loc.x + 1 < w.width  && loc.y - 1 >= 0 {
+        east := w.Location(loc.x + 1, loc.y)
+        NE := w.Location(loc.x + 1, loc.y - 1)
+        if loc.terrace < east.terrace && !NE.isRiver {
+          return false
+        }
+      }
+
+      if loc.x + 1 < w.width && loc.y - 1 >= 0 && loc.x - 1 >= 0 {
+        east := w.Location(loc.x + 1, loc.y)
+        NW := w.Location(loc.x - 1, loc.y - 1)
+        if loc.terrace > east.terrace && !NW.isRiver {
+          return false
+        }
+      }
+
+      if loc.x - 1 >= 0 && loc.y - 1 >= 0 {
+        west := w.Location(loc.x - 1, loc.y)
+        NW := w.Location(loc.x - 1, loc.y - 1)
+        if loc.terrace < west.terrace && !NW.isRiver {
+          return false
+        }
+      }
+
+      if loc.x - 1 >= 0 && loc.y - 1 >= 0 && loc.x + 1 < w.width {
+        west := w.Location(loc.x - 1, loc.y)
+        NE := w.Location(loc.x + 1, loc.y - 1)
+        if loc.terrace > west.terrace && !NE.isRiver {
+          return false
+        }
+      }
+    }
+  }
+  return true
+}
+
+func (w World) AddWater(loc *Location) {
+  loc.water += loc.moisture
+  loc.water -= loc.soilDepth
+  if loc.water > WATER_SATURATION && loc.biome != OCEAN {
+    loc.isRiver = true
+    west := w.Location(loc.x - 1, loc.y)
+    east := w.Location(loc.x + 1, loc.y)
+    if west.terrace > loc.terrace {
+      loc.addFeature(RIGHT_WATER_SHADOW_FEATURE)
+    }
+    if east.terrace > loc.terrace {
+      loc.addFeature(LEFT_WATER_SHADOW_FEATURE)
+    }
+    // Square up the water so that a body of water is a minimum of 3x3 tiles.
+    // This allows for a puddle of water to be surrounded in suitable tiles.
+    if loc.x > 1 && loc.y > 1 && loc.x + 1 < w.width && loc.y + 1 < w.height {
+      for x := -1; x < 2; x++ {
+        for y := -1; y < 2; y++ {
+          adjLoc := w.Location(loc.x + x, loc.y + y)
+          adjLoc.isRiver = true
+        }
+      }
+    }
+  }
+}
+
 func (w World) AddRivers() {
   queue := make([]*Location, len(w.peaks))
-
   i := 0
   totalWater := 0.0
+
   for loc, _ := range w.peaks {
-    loc.water = w.water + loc.moisture
+    loc.water = w.water * loc.moisture * loc.height
     totalWater += loc.water
     queue[i] = loc
     i++
@@ -200,28 +275,29 @@ func (w World) AddRivers() {
       if pred.water < 0 {
         continue
       }
+      if pred.y > loc.y {
+        continue
+      }
 
-      // Calculate percentage of predecessor's water the successor will
-      // receive.
-      gradientRatio := (math.Abs(pred.height) - math.Abs(loc.height)) / pred.totalGradient
+      gradientRatio := 0.0
+      if pred.terrace > loc.terrace {
+        gradientRatio = 1.0;
+      } else {
+        // Calculate percentage of predecessor's water the successor will
+        // receive.
+        gradientRatio = (math.Abs(pred.height) - math.Abs(loc.height)) / pred.totalGradient
+      }
       water := gradientRatio * pred.water
       loc.water += water
     }
 
-    loc.water += loc.moisture
-    loc.water -= loc.soilDepth
-    if loc.water > WATER_SATURATION && loc.biome != OCEAN {
-      loc.isRiver = true
-      // Square up the water so that a body of water is a minimum of 3x3 tiles.
-      // This allows for a puddle of water to be surrounded in suitable tiles.
-      if loc.x > 1 && loc.y > 1 && loc.x + 1 < w.width && loc.y + 1 < w.height {
-        for x := -1; x < 2; x++ {
-          for y := -1; y < 2; y++ {
-            adjLoc := w.Location(loc.x + x, loc.y + y)
-            if adjLoc.biome != OCEAN {
-              adjLoc.isRiver = true
-            }
-          }
+    if w.isRiverValid(loc) {
+      w.AddWater(loc)
+    } else {
+      if loc.y + 1 < w.height {
+        south := w.Location(loc.x, loc.y + 1)
+        if w.isRiverValid(south) {
+          w.AddWater(south)
         }
       }
     }

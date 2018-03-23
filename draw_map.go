@@ -155,9 +155,9 @@ func (render *MapRenderer) DrawRiverBankFeature(x, y int, feat uint, biome uint8
   render.floorSheet.DrawFeature(x, y, idx, render.mapImg)
 }
 
-func (render *MapRenderer) DrawFeatures(loc *Location, x, y int) {
+func (render *MapRenderer) DrawFeatures(loc *Location, biome uint8, x, y int) {
   if loc.isWall {
-    row := TILE_ROWS[loc.biome]
+    row := TILE_ROWS[biome]
     walls := [2]int { WALL_0, WALL_1 }
     colIdx := rand.Intn(len(walls))
     col := walls[colIdx]
@@ -173,6 +173,7 @@ func (render *MapRenderer) DrawFeatures(loc *Location, x, y int) {
                                   render.mapImg)
   }
 
+  if biome != RIVER {
   if loc.hasFeature(RIGHT_SHADOW_FEATURE) {
     render.shadowSheet.DrawFeature(x, y, RIGHT_VERTICAL_SHADOW, render.mapImg)
   }
@@ -188,17 +189,27 @@ func (render *MapRenderer) DrawFeatures(loc *Location, x, y int) {
   if loc.hasFeature(BOTTOM_RIGHT_SHADOW_FEATURE) {
     render.shadowSheet.DrawFeature(x, y, BOTTOM_RIGHT_SHADOW, render.mapImg)
   }
+  } else {
+    if loc.hasFeature(LEFT_WATER_SHADOW_FEATURE) {
+      render.shadowSheet.DrawFeature(x, y, LEFT_VERTICAL_WATER_SHADOW, render.mapImg)
+    }
+    if loc.hasFeature(RIGHT_WATER_SHADOW_FEATURE) {
+      render.shadowSheet.DrawFeature(x, y, RIGHT_VERTICAL_WATER_SHADOW, render.mapImg)
+    }
+  }
   if loc.hasFeature(TREE_FEATURE) {
-    trees := BIOME_TREES[loc.biome]
-    col := rand.Intn(len(trees))
-    rows := [2]int { 0, 1 }
-    rowIdx := rand.Intn(len(rows))
-    row := rows[rowIdx]
-    render.treeSheet.DrawFeature(x, y, row * NUM_TREES + trees[col],
+    trees := BIOME_TREES[biome]
+    if len(trees) != 0 {
+      col := rand.Intn(len(trees))
+      rows := [2]int { 0, 1 }
+      rowIdx := rand.Intn(len(rows))
+      row := rows[rowIdx]
+      render.treeSheet.DrawFeature(x, y, row * NUM_TREES + trees[col],
                                  render.mapImg)
+    }
   }
   if loc.hasFeature(ROCK_FEATURE) {
-    rocks := BIOME_ROCKS[loc.biome]
+    rocks := BIOME_ROCKS[biome]
     idx := rand.Intn(len(rocks))
     rock := rocks[idx]
     render.rockSheet.DrawFeature(x, y, rock, render.mapImg)
@@ -224,16 +235,18 @@ func (render *MapRenderer) ParallelDraw(w *World, xBegin, xEnd int, c chan int) 
         if biome == OCEAN {
           biome = BEACH
         }
+        if loc.isWall {
+          biome = RIVER
+        }
         render.DrawRiverBankFeature(x, y, loc.riverBank, biome)
-        continue
-      }
-      if loc.isRiver {
+        //render.DrawFeatures(loc, biome, x, y)
+      } else if loc.isRiver {
         render.DrawFloorTile(x, y, RIVER)
-        continue
+        render.DrawFeatures(loc, RIVER, x, y)
+      } else {
+        render.DrawFloorTile(x, y, biome)
+        render.DrawFeatures(loc, loc.biome, x, y)
       }
-
-      render.DrawFloorTile(x, y, biome)
-      render.DrawFeatures(loc, x, y)
     }
   }
   c <- 1
