@@ -12,15 +12,16 @@ import (
   "strconv"
 )
 
-/*
-const SHADOW_ROW = GREY_PATH
 const (
-  RIGHT_SHADOW = 14
-  BOTTOM_SHADOW = 15
-  TOP_SHADOW = 16
-  LEFT_SHADOW = 17
+  LEFT_VERTICAL_SHADOW = iota
+  HORIZONTAL_SHADOW
+  RIGHT_VERTICAL_SHADOW
+  BOTTOM_LEFT_SHADOW
+  BOTTOM_RIGHT_SHADOW
+  NUM_SHADOWS
 )
 
+/*
 // Foliage, treat as continous row.
 const (
   LIGHT_GREEN_ROUND = iota
@@ -142,56 +143,23 @@ var BIOME_TREES = [...] []int {
 }
 */
 
+
 type MapRenderer struct {
   mapWidth, mapHeight, tileWidth, tileHeight, tileColumns, tileRows int
-  sprites []image.Rectangle
-  spritesheet image.Image
+  floorSheet *SpriteSheet
+  shadowSheet *SpriteSheet
   mapImg draw.Image
 }
 
-func CreateMapRenderer(width, height, cols, rows int) *MapRenderer {
-
-  // Now use that pixel data to create the game map constructed from tiled
-  // sprites.
-  tilesheetFile, err := os.Open("outdoor_floor_tiles.png")
-  if err != nil {
-    log.Fatal(err)
-  }
-
-  spritesheet, err := png.Decode(tilesheetFile)
-  if err != nil {
-    log.Fatal(err)
-  }
-  fmt.Println("opened and decoded tilesheet")
-
+func CreateMapRenderer(width, height int) *MapRenderer {
   render := new(MapRenderer)
-  render.spritesheet = spritesheet
   render.mapWidth = width
   render.mapHeight = height
-  render.tileWidth = TILE_WIDTH
-  render.tileHeight = TILE_HEIGHT
-  render.tileColumns = cols
-  render.tileRows = rows
-  render.spritesheet = spritesheet
   render.mapImg = image.NewRGBA(image.Rect(0, 0, width, height))
-  render.sprites = make([]image.Rectangle, cols * rows)
-  for y := 0; y < rows; y++ {
-    for x := 0; x < cols; x++ {
-      idx := y * cols + x
-      render.sprites[idx] = image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
-                                       x * TILE_WIDTH + TILE_WIDTH,
-                                       y * TILE_HEIGHT + TILE_HEIGHT )
-    }
-  }
+  render.floorSheet = CreateSheet("outdoor_floor_tiles.png", MAX_TILE_COLUMNS,
+                                  MAX_TILE_ROWS)
+  render.shadowSheet = CreateSheet("shadows.png", NUM_SHADOWS, 1)
   return render
-}
-
-func (renderer *MapRenderer) DrawFeature(x, y, idx int) {
-  srcR := renderer.sprites[idx]
-  destR := image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
-                      x * TILE_WIDTH + TILE_WIDTH,
-                      y * TILE_HEIGHT + TILE_HEIGHT)
-  draw.Draw(renderer.mapImg, destR, renderer.spritesheet, srcR.Min, draw.Over)
 }
 
 func (render *MapRenderer) DrawRiverBankFeature(x, y int, feat uint, biome uint8) {
@@ -219,7 +187,7 @@ func (render *MapRenderer) DrawRiverBankFeature(x, y int, feat uint, biome uint8
   //offset = feat
   row := TILE_ROWS[biome]
   idx := row * MAX_TILE_COLUMNS + col
-  render.DrawFeature(x, y, idx)
+  render.floorSheet.DrawFeature(x, y, idx, render.mapImg)
 }
 
 /*
@@ -230,15 +198,40 @@ func (render *MapRenderer) DrawGroundFeature(x, y int, biome uint8) {
 }
 */
 
+func (render *MapRenderer) DrawFeatures(loc *Location, x, y int) {
+  if loc.isWall {
+    row := TILE_ROWS[loc.biome]
+    walls := [2]int { WALL_0, WALL_1 }
+    colIdx := rand.Intn(len(walls))
+    col := walls[colIdx]
+    render.floorSheet.DrawFeature(x, y, row * MAX_TILE_COLUMNS + col,
+                                  render.mapImg)
+    return
+  }
+
+  if loc.hasFeature(RIGHT_SHADOW_FEATURE) {
+    render.shadowSheet.DrawFeature(x, y, RIGHT_VERTICAL_SHADOW, render.mapImg)
+  }
+  if loc.hasFeature(LEFT_SHADOW_FEATURE) {
+    render.shadowSheet.DrawFeature(x, y, LEFT_VERTICAL_SHADOW, render.mapImg)
+  }
+  if loc.hasFeature(HORIZONTAL_SHADOW_FEATURE) {
+    render.shadowSheet.DrawFeature(x, y, HORIZONTAL_SHADOW, render.mapImg)
+  }
+  if loc.hasFeature(BOTTOM_LEFT_SHADOW_FEATURE) {
+    render.shadowSheet.DrawFeature(x, y, BOTTOM_LEFT_SHADOW, render.mapImg)
+  }
+  if loc.hasFeature(BOTTOM_RIGHT_SHADOW_FEATURE) {
+    render.shadowSheet.DrawFeature(x, y, BOTTOM_RIGHT_SHADOW, render.mapImg)
+  }
+}
+
 func (render *MapRenderer) DrawFloorTile(x, y int, biome uint8) {
   column := TILE_COLUMNS[biome]
   colIdx := rand.Intn(len(column))
   row := TILE_ROWS[biome]
-  srcR := render.sprites[row * MAX_TILE_COLUMNS + column[colIdx]]
-  destR := image.Rect(x * TILE_WIDTH, y * TILE_HEIGHT,
-                      x * TILE_WIDTH + TILE_WIDTH,
-                      y * TILE_HEIGHT + TILE_HEIGHT)
-  draw.Draw(render.mapImg, destR, render.spritesheet, srcR.Min, draw.Src)
+  idx := row * MAX_TILE_COLUMNS + column[colIdx]
+  render.floorSheet.DrawFloorTile(x, y, idx, render.mapImg)
 }
 
 func (render *MapRenderer) ParallelDraw(w *World, xBegin, xEnd int, c chan int) {
@@ -255,37 +248,19 @@ func (render *MapRenderer) ParallelDraw(w *World, xBegin, xEnd int, c chan int) 
         render.DrawRiverBankFeature(x, y, loc.riverBank, biome)
         continue
       }
-      if loc.isWall {
-        row := TILE_ROWS[biome]
-        render.DrawFeature(x, y, row * MAX_TILE_COLUMNS + WALL_0)
-        continue
-      }
       if loc.isRiver {
         render.DrawFloorTile(x, y, RIVER)
         continue
       }
 
       render.DrawFloorTile(x, y, biome)
-
+      render.DrawFeatures(loc, x, y)
       /*
-      if loc.features == EMPTY {
-        continue
-      }
       if loc.hasFeature(GROUND_FEATURE) {
         render.DrawGroundFeature(x, y, loc.nearbyBiome)
       }
-      if loc.hasFeature(RIGHT_SHADOW_FEATURE) {
-        render.DrawFeature(x, y, SHADOW_ROW * MAX_TILE_COLUMNS + RIGHT_SHADOW)
-      }
-      if loc.hasFeature(BOTTOM_SHADOW_FEATURE) {
-        render.DrawFeature(x, y, SHADOW_ROW * MAX_TILE_COLUMNS + BOTTOM_SHADOW)
-      } 
-      if loc.hasFeature(LEFT_SHADOW_FEATURE) {
-        render.DrawFeature(x, y, SHADOW_ROW * MAX_TILE_COLUMNS + LEFT_SHADOW)
-      }
-      if loc.hasFeature(TOP_SHADOW_FEATURE) {
-        render.DrawFeature(x, y, SHADOW_ROW * MAX_TILE_COLUMNS + TOP_SHADOW)
-      }
+      */
+      /*
       if loc.hasFeature(ROCK_FEATURE) {
         col := rand.Intn(NUM_ROCKS)
         render.DrawFeature(x, y, ROCKS * MAX_TILE_COLUMNS + col)
@@ -352,8 +327,7 @@ func DrawMap(w *World, hSeed, mSeed, sSeed, fSeed, rSeed int64, numCPUs int) {
   }
   fmt.Println("overworld image created.")
 
-  render := CreateMapRenderer(w.width * TILE_WIDTH, w.height * TILE_HEIGHT,
-                              MAX_TILE_COLUMNS, MAX_TILE_ROWS)
+  render := CreateMapRenderer(w.width * TILE_WIDTH, w.height * TILE_HEIGHT)
 
   c := make(chan int, numCPUs)
   for i := 0; i < numCPUs; i++ {

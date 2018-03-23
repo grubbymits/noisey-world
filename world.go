@@ -446,60 +446,83 @@ func (w World) CalcGradient(c chan int) {
       hasSuccessor := false
 
       if y - 1 >= 0 {
-        otherLoc := w.Location(x, y - 1)
-        if otherLoc.height <= centreLoc.height {
-          centreLoc.addSuccessor(otherLoc)
+        north := w.Location(x, y - 1)
+        if north.height <= centreLoc.height {
+          centreLoc.addSuccessor(north)
           hasSuccessor = true
-        } else if otherLoc.height >= centreLoc.height {
-          centreLoc.addPredecessor(otherLoc)
-          hasPredecessor = true
-          if otherLoc.terrace > centreLoc.terrace {
-            centreLoc.addFeature(BOTTOM_SHADOW_FEATURE)
+          if north.terrace < centreLoc.terrace {
+            centreLoc.addFeature(HORIZONTAL_SHADOW_FEATURE)
           }
-        }
-      }
-
-      if x + 1 < width {
-        otherLoc := w.Location(x + 1, y)
-        if otherLoc.height <= centreLoc.height {
-          centreLoc.addSuccessor(otherLoc)
-          hasSuccessor = true
-        } else if otherLoc.height >= centreLoc.height {
-          centreLoc.addPredecessor(otherLoc)
+        } else if north.height >= centreLoc.height {
+          centreLoc.addPredecessor(north)
           hasPredecessor = true
-          if otherLoc.terrace > centreLoc.terrace {
-            centreLoc.addFeature(RIGHT_SHADOW_FEATURE)
+          if north.terrace > centreLoc.terrace {
+            centreLoc.addFeature(HORIZONTAL_SHADOW_FEATURE)
           }
         }
       }
 
       if y + 1 < height {
-        otherLoc := w.Location(x, y + 1)
-        if otherLoc.height <= centreLoc.height {
-          centreLoc.addSuccessor(otherLoc)
+        south := w.Location(x, y + 1)
+        if south.height <= centreLoc.height {
+          centreLoc.addSuccessor(south)
           hasSuccessor = true
-        } else if otherLoc.height >= centreLoc.height {
-          centreLoc.addPredecessor(otherLoc)
+        } else if south.height >= centreLoc.height {
+          centreLoc.addPredecessor(south)
           hasPredecessor = true
-          if otherLoc.terrace > centreLoc.terrace {
-            centreLoc.addFeature(TOP_SHADOW_FEATURE)
+        }
+      }
+
+      if x + 1 < width {
+        east := w.Location(x + 1, y)
+        if east.height <= centreLoc.height {
+          centreLoc.addSuccessor(east)
+          hasSuccessor = true
+        } else if east.height >= centreLoc.height {
+          centreLoc.addPredecessor(east)
+          hasPredecessor = true
+          if east.terrace > centreLoc.terrace {
+            centreLoc.addFeature(LEFT_SHADOW_FEATURE)
           }
         }
       }
 
       if x - 1 >= 0 {
-        otherLoc := w.Location(x - 1, y)
-        if otherLoc.height <= centreLoc.height {
-          centreLoc.addSuccessor(otherLoc)
+        west := w.Location(x - 1, y)
+        if west.height <= centreLoc.height {
+          centreLoc.addSuccessor(west)
           hasSuccessor = true
-        } else if otherLoc.height >= centreLoc.height {
-          centreLoc.addPredecessor(otherLoc)
+        } else if west.height >= centreLoc.height {
+          centreLoc.addPredecessor(west)
           hasPredecessor = true
-          if otherLoc.terrace > centreLoc.terrace {
-            centreLoc.addFeature(LEFT_SHADOW_FEATURE)
+          if west.terrace > centreLoc.terrace {
+            centreLoc.addFeature(RIGHT_SHADOW_FEATURE)
           }
         }
       }
+
+      if x + 1 < height && y - 1 >= 0 {
+        topRight := w.Location(x + 1, y - 1)
+        top := w.Location(x, y - 1)
+        right := w.Location(x + 1, y)
+        if topRight.terrace > centreLoc.terrace &&
+           top.terrace == centreLoc.terrace &&
+           right.terrace == centreLoc.terrace {
+          centreLoc.addFeature(BOTTOM_LEFT_SHADOW_FEATURE)
+        }
+      }
+
+      if x - 1 >= 0 && y - 1 >= 0 {
+        topLeft := w.Location(x - 1, y - 1)
+        top := w.Location(x, y - 1)
+        left := w.Location(x - 1, y)
+        if topLeft.terrace > centreLoc.terrace &&
+           top.terrace == centreLoc.terrace &&
+           left.terrace == centreLoc.terrace {
+          centreLoc.addFeature(BOTTOM_RIGHT_SHADOW_FEATURE)
+        }
+      }
+
       if !hasPredecessor {
         w.addPeak(w.Location(x, y))
       } else if !hasSuccessor {
