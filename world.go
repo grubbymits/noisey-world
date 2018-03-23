@@ -14,6 +14,7 @@ import "github.com/ojrac/opensimplex-go"
 
 const REGION_SIZE = 64
 const REGION_AREA = REGION_SIZE * REGION_SIZE
+
 var TREE_DENSITY = [BIOMES]int {
   0,  // OCEAN
   0,  // RIVER
@@ -26,7 +27,7 @@ var TREE_DENSITY = [BIOMES]int {
   REGION_AREA / 128,  // MOORLAND
   REGION_AREA / 128,  // FENLAND
   REGION_AREA / 16,   // WOODLAND
-  REGION_AREA / 16,   // FOREST
+  REGION_AREA / 8,   // FOREST
 }
 
 var PLANT_DENSITY = [BIOMES]int {
@@ -38,10 +39,10 @@ var PLANT_DENSITY = [BIOMES]int {
   REGION_AREA / 64,   // HEATHLAND
   REGION_AREA / 16,   // SHRUBLAND
   REGION_AREA / 16,   // GRASSLAND
-  REGION_AREA / 128,  // MOORLAND
-  REGION_AREA / 128,  // FENLAND
-  REGION_AREA / 32,   // WOODLAND
-  REGION_AREA / 16,   // FOREST
+  REGION_AREA / 16,   // MOORLAND
+  REGION_AREA / 16,   // FENLAND
+  REGION_AREA / 64,   // WOODLAND
+  REGION_AREA / 128,  // FOREST
 }
 
 var ROCK_DENSITY = [BIOMES]int {
@@ -849,7 +850,7 @@ func GenerateMap(hFreq, mFreq, sFreq, tFreq, pFreq, rFreq float64,
     <-c
   }
 
-  c = make(chan int, 4*numCPUs + 1)
+  c = make(chan int, 5*numCPUs + 1)
   go world.CalcGradient(c);
 
   for i := 0; i < numCPUs; i++ {
@@ -869,7 +870,7 @@ func GenerateMap(hFreq, mFreq, sFreq, tFreq, pFreq, rFreq float64,
                          (i + 1) * width / numCPUs,
                          rNoise, c)
   }
-  for i := 0; i < 4*numCPUs + 1; i++ {
+  for i := 0; i < 5*numCPUs + 1; i++ {
     <-c
   }
 
