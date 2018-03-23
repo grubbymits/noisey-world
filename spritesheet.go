@@ -76,6 +76,32 @@ const (
   NUM_TREES
 )
 
+const (
+  DRY_BROWN_0 = iota
+  DRY_BROWN_1
+  DRY_BROWN_2
+  DRY_GREY_0
+  DRY_GREY_1
+  DRY_GREY_2
+  DRY_LARGE_GREY_0
+  DRY_LARGE_GREY_1
+  WET_BROWN_0
+  WET_BROWN_1
+  WET_BROWN_2
+  WET_GREY_0
+  WET_GREY_1
+  WET_GREY_2
+  WET_LARGE_GREY_0
+  WET_LARGE_GREY_1
+  WATER_BROWN_0
+  WATER_BROWN_1
+  WATER_BROWN_2
+  WATER_GREY_0
+  WATER_GREY_1
+  WATER_GREY_2
+  NUM_ROCKS
+)
+
 type SpriteSheet struct {
   tileWidth, tileHeight, tileColumns, tileRows int
   spritesheet image.Image

@@ -53,7 +53,7 @@ var TILE_COLUMNS = [...] []int {
   { PLAIN_0, PLAIN_1 },
 }
 
-var BIOME_TREES = [...] []int {
+var BIOME_TREES = [BIOMES] []int {
   { },  // OCEAN
   { },  // RIVER
   { },  // BEACH
@@ -78,12 +78,39 @@ var BIOME_TREES = [...] []int {
   { LIGHT_PINE, DARK_PINE, LIGHT_GREEN_ROUND, DARK_GREEN_ROUND },
 }
 
+var BIOME_ROCKS = [BIOMES] []int {
+  // OCEAN
+  { WATER_GREY_0, WATER_GREY_1, WATER_GREY_2 },
+  // RIVER
+  { WATER_BROWN_0, WATER_BROWN_1, WATER_BROWN_2 },
+  // BEACH
+  { DRY_BROWN_0, DRY_BROWN_1, DRY_BROWN_2, DRY_GREY_0, DRY_GREY_1, DRY_GREY_2},
+  // DRY_ROCK
+  { DRY_BROWN_0, DRY_BROWN_1, DRY_BROWN_2, DRY_GREY_0, DRY_GREY_1, DRY_GREY_2},
+  // WET_ROCK
+  { WET_BROWN_0, WET_BROWN_1, WET_BROWN_2, WET_GREY_0, WET_GREY_1, WET_GREY_2},
+  // HEATHLAND
+  { DRY_GREY_0, DRY_GREY_1, DRY_GREY_2},
+  // SHRUBLAND
+  { DRY_BROWN_0, DRY_BROWN_1, DRY_BROWN_2},
+  // GRASSLAND
+  { DRY_BROWN_0, DRY_BROWN_1, DRY_BROWN_2, WET_GREY_0, WET_GREY_1, WET_GREY_2},
+  // MOORLAND
+  { WET_BROWN_0, WET_BROWN_1, WET_BROWN_2, WET_GREY_0, WET_GREY_1, WET_GREY_2},
+  // FENLAND
+  { WET_BROWN_0, WET_BROWN_1, WET_BROWN_2, WET_GREY_0, WET_GREY_1, WET_GREY_2},
+  // WOODLAND
+  { WET_BROWN_0, WET_BROWN_1, WET_BROWN_2, WET_GREY_0, WET_GREY_1, WET_GREY_2},
+  // FOREST
+  { WET_BROWN_0, WET_BROWN_1, WET_BROWN_2, WET_GREY_0, WET_GREY_1, WET_GREY_2},
+}
 
 type MapRenderer struct {
   mapWidth, mapHeight, tileWidth, tileHeight, tileColumns, tileRows int
   floorSheet *SpriteSheet
   shadowSheet *SpriteSheet
   treeSheet *SpriteSheet
+  rockSheet *SpriteSheet
   mapImg draw.Image
 }
 
@@ -96,6 +123,7 @@ func CreateMapRenderer(width, height int) *MapRenderer {
                                   MAX_TILE_ROWS)
   render.shadowSheet = CreateSheet("shadows.png", NUM_SHADOWS, 1)
   render.treeSheet = CreateSheet("trees.png", NUM_TREES, 2)
+  render.rockSheet = CreateSheet("rocks.png", NUM_ROCKS, 1)
   return render
 }
 
@@ -162,12 +190,18 @@ func (render *MapRenderer) DrawFeatures(loc *Location, x, y int) {
   }
   if loc.hasFeature(TREE_FEATURE) {
     trees := BIOME_TREES[loc.biome]
-    rows := [2]int { 0, 1 }
     col := rand.Intn(len(trees))
+    rows := [2]int { 0, 1 }
     rowIdx := rand.Intn(len(rows))
     row := rows[rowIdx]
     render.treeSheet.DrawFeature(x, y, row * NUM_TREES + trees[col],
                                  render.mapImg)
+  }
+  if loc.hasFeature(ROCK_FEATURE) {
+    rocks := BIOME_ROCKS[loc.biome]
+    idx := rand.Intn(len(rocks))
+    rock := rocks[idx]
+    render.rockSheet.DrawFeature(x, y, rock, render.mapImg)
   }
 }
 
@@ -200,12 +234,6 @@ func (render *MapRenderer) ParallelDraw(w *World, xBegin, xEnd int, c chan int) 
 
       render.DrawFloorTile(x, y, biome)
       render.DrawFeatures(loc, x, y)
-      /*
-      if loc.hasFeature(ROCK_FEATURE) {
-        col := rand.Intn(NUM_ROCKS)
-        render.DrawFeature(x, y, ROCKS * MAX_TILE_COLUMNS + col)
-      }
-      */
     }
   }
   c <- 1
