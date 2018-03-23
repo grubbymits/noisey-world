@@ -190,14 +190,6 @@ func (render *MapRenderer) DrawRiverBankFeature(x, y int, feat uint, biome uint8
   render.floorSheet.DrawFeature(x, y, idx, render.mapImg)
 }
 
-/*
-func (render *MapRenderer) DrawGroundFeature(x, y int, biome uint8) {
-  column := GROUND_FEATURE_COLUMN
-  row := TILE_ROWS[biome]
-  render.DrawFeature(x, y, row * MAX_TILE_COLUMNS + column)
-}
-*/
-
 func (render *MapRenderer) DrawFeatures(loc *Location, x, y int) {
   if loc.isWall {
     row := TILE_ROWS[loc.biome]
@@ -207,6 +199,13 @@ func (render *MapRenderer) DrawFeatures(loc *Location, x, y int) {
     render.floorSheet.DrawFeature(x, y, row * MAX_TILE_COLUMNS + col,
                                   render.mapImg)
     return
+  }
+
+  if loc.hasFeature(GROUND_FEATURE) {
+    col := BLEND
+    row := TILE_ROWS[loc.nearbyBiome]
+    render.floorSheet.DrawFeature(x, y, row * MAX_TILE_COLUMNS + col,
+                                  render.mapImg)
   }
 
   if loc.hasFeature(RIGHT_SHADOW_FEATURE) {
@@ -255,11 +254,6 @@ func (render *MapRenderer) ParallelDraw(w *World, xBegin, xEnd int, c chan int) 
 
       render.DrawFloorTile(x, y, biome)
       render.DrawFeatures(loc, x, y)
-      /*
-      if loc.hasFeature(GROUND_FEATURE) {
-        render.DrawGroundFeature(x, y, loc.nearbyBiome)
-      }
-      */
       /*
       if loc.hasFeature(ROCK_FEATURE) {
         col := rand.Intn(NUM_ROCKS)
