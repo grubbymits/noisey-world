@@ -4,16 +4,17 @@ const (
   EMPTY = 0
   TREE_FEATURE = 1
   ROCK_FEATURE = 1 << 1
+  PLANT_FEATURE = 1 << 2
 
-  RIGHT_SHADOW_FEATURE = 1 << 2
-  HORIZONTAL_SHADOW_FEATURE = 1 << 3
-  LEFT_SHADOW_FEATURE = 1 << 4
-  BOTTOM_LEFT_SHADOW_FEATURE = 1 << 5
-  BOTTOM_RIGHT_SHADOW_FEATURE = 1 << 6
-  LEFT_WATER_SHADOW_FEATURE = 1 << 7
-  RIGHT_WATER_SHADOW_FEATURE = 1 << 8
+  RIGHT_SHADOW_FEATURE = 1 << 3
+  HORIZONTAL_SHADOW_FEATURE = 1 << 4
+  LEFT_SHADOW_FEATURE = 1 << 5
+  BOTTOM_LEFT_SHADOW_FEATURE = 1 << 6
+  BOTTOM_RIGHT_SHADOW_FEATURE = 1 << 7
+  LEFT_WATER_SHADOW_FEATURE = 1 << 8
+  RIGHT_WATER_SHADOW_FEATURE = 1 << 9
 
-  GROUND_FEATURE = 1 << 9
+  GROUND_FEATURE = 1 << 10
 )
 
 const (
@@ -146,7 +147,7 @@ func biome(h, m, s float64) uint8 {
 }
 
 type Location struct {
-  height, moisture, soilDepth, foliage, rock, water float64
+  height, moisture, soilDepth, tree, rock, plant, water float64
   preds, succs [4]*Location
   numPreds, numSuccs int
   totalGradient float64

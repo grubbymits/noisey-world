@@ -78,6 +78,34 @@ var BIOME_TREES = [BIOMES] []int {
   { LIGHT_PINE, DARK_PINE, LIGHT_GREEN_ROUND, DARK_GREEN_ROUND },
 }
 
+var BIOME_PLANTS = [BIOMES] []int {
+  // OCEAN
+  { },
+  // RIVER
+  { WHITE_LILY, LARGE_LILY, TWO_LILLIES, SMALL_LILY },
+  // BEACH
+  { },
+  // DRY_ROCK
+  { SMALL_GRASS },
+  // WET_ROCK
+  { SMALL_GRASS, LARGE_GRASS },
+  // HEATHLAND
+  { SMALL_GRASS, LARGE_GRASS, WHITE_FLOWER, YELLOW_FLOWER },
+  // SHRUBLAND
+  { SMALL_GRASS, LARGE_GRASS, WHITE_FLOWER, PINK_FLOWER, PURPLE_FLOWER },
+  // GRASSLAND
+  { LARGE_GRASS, WHITE_FLOWER, PINK_FLOWER, PURPLE_FLOWER, BLUE_FLOWER },
+  // MOORLAND
+  { SMALL_GRASS, LARGE_GRASS, PINK_FLOWER, PURPLE_FLOWER, BLUE_FLOWER, YELLOW_FLOWER },
+  // FENLAND
+  { SMALL_GRASS, LARGE_GRASS, BLUE_FLOWER, YELLOW_FLOWER },
+  // WOODLAND
+  { WHITE_FLOWER, YELLOW_FLOWER, MUSHROOM_3, MUSHROOM_4, MUSHROOM_5 },
+  // FOREST
+  { WHITE_FLOWER, YELLOW_FLOWER, MUSHROOM_0, MUSHROOM_1, MUSHROOM_2, MUSHROOM_3,
+    MUSHROOM_4, MUSHROOM_5 },
+}
+
 var BIOME_ROCKS = [BIOMES] []int {
   // OCEAN
   { WATER_GREY_0, WATER_GREY_1, WATER_GREY_2 },
@@ -110,6 +138,7 @@ type MapRenderer struct {
   floorSheet *SpriteSheet
   shadowSheet *SpriteSheet
   treeSheet *SpriteSheet
+  plantSheet *SpriteSheet
   rockSheet *SpriteSheet
   mapImg draw.Image
 }
@@ -124,6 +153,7 @@ func CreateMapRenderer(width, height int) *MapRenderer {
   render.shadowSheet = CreateSheet("shadows.png", NUM_SHADOWS, 1)
   render.treeSheet = CreateSheet("trees.png", NUM_TREES, 2)
   render.rockSheet = CreateSheet("rocks.png", NUM_ROCKS, 1)
+  render.plantSheet = CreateSheet("plants.png", NUM_PLANTS, 1)
   return render
 }
 
@@ -213,6 +243,14 @@ func (render *MapRenderer) DrawFeatures(loc *Location, biome uint8, x, y int) {
     idx := rand.Intn(len(rocks))
     rock := rocks[idx]
     render.rockSheet.DrawFeature(x, y, rock, render.mapImg)
+  }
+  if loc.hasFeature(PLANT_FEATURE) {
+    plants := BIOME_PLANTS[biome]
+    if len(plants) != 0 {
+      idx := rand.Intn(len(plants))
+      plant := plants[idx]
+      render.plantSheet.DrawFeature(x, y, plant, render.mapImg)
+    }
   }
 }
 
