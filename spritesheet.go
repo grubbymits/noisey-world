@@ -126,6 +126,25 @@ const (
   NUM_ROCKS
 )
 
+const (
+  PATH_0 = iota
+  _
+  _
+  _
+  _
+  _
+  _
+  _
+  _
+  _
+  _
+  _
+  _
+  _
+  _
+  NUM_PATHS
+)
+
 type SpriteSheet struct {
   tileWidth, tileHeight, tileColumns, tileRows int
   spritesheet image.Image

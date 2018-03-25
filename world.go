@@ -7,12 +7,13 @@ import (
   "math"
   "math/rand"
   "runtime"
+  "sort"
   "time"
 )
 
 import "github.com/ojrac/opensimplex-go"
 
-const REGION_SIZE = 64
+const REGION_SIZE = 16
 const REGION_AREA = REGION_SIZE * REGION_SIZE
 
 var TREE_DENSITY = [BIOMES]int {
@@ -482,7 +483,7 @@ func (w World) AnalyseRegions(xBegin, xEnd int, c chan int) {
   // For each region, use the most often occuring biome to choose the number of
   // trees for that region. Iterate through the locations put them into a max
   // heap. Once all the locations have been visited, sort the heap and pop off
-  // the required number of locations for each tree.
+  // the required number of locations for each tree, rock and plant.
   for y := 0; y < w.height; y += REGION_SIZE {
     for x := xBegin; x < xEnd; x += REGION_SIZE {
       biomeCount := [BIOMES]int{0}
@@ -496,15 +497,17 @@ func (w World) AnalyseRegions(xBegin, xEnd int, c chan int) {
           tree := 0.0
           rock := 0.0
           plant := 0.0
-          biome := w.Biome(rx, ry)
+          loc := w.Location(rx, ry)
+          biome := loc.biome
           biomeCount[biome]++
-          if biome != OCEAN && biome != BEACH &&
-             !w.Location(rx, ry).isRiver && !w.Location(rx, y).isWall {
-            tree = w.Tree(rx, ry)
-          }
-          if !w.Location(rx, ry).isWall {
+          if !loc.isWall {
+            if biome != OCEAN && biome != BEACH && !loc.isRiver {
+              tree = w.Tree(rx, ry)
+            }
+            if !loc.isRiverBank {
+              plant = w.Plant(rx, ry)
+            }
             rock = w.Rock(rx, ry)
-            plant = w.Plant(rx, ry)
           }
           treeHeap[i] = &LocVal{ i, rx, ry, tree }
           rockHeap[i] = &LocVal{ i, rx, ry, rock }
@@ -611,7 +614,7 @@ func (w World) CalcGradient(c chan int) {
         }
       }
 
-      if x + 1 < height && y - 1 >= 0 {
+      if x + 1 < width && y - 1 >= 0 {
         topRight := w.Location(x + 1, y - 1)
         top := w.Location(x, y - 1)
         right := w.Location(x + 1, y)
@@ -655,7 +658,7 @@ func (world World) CalcHeight(xBegin, xEnd int,
   freq := world.hFreq
   width := world.width
   height := world.height
-  heightBias := float64(3 / height)
+  //heightBias := float64(3 / height)
 
   for y := 0; y < height; y++ {
     for x := xBegin; x < xEnd; x++ {
@@ -664,8 +667,8 @@ func (world World) CalcHeight(xBegin, xEnd int,
       h := 1 * noise.Eval2(freq * xFloat, freq * yFloat) +
              0.50 * noise.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
              0.25 * noise.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
-             0.125 * noise.Eval2(8 * freq * xFloat, 8 * freq * yFloat) +
-             heightBias * float64(height - y)
+             0.125 * noise.Eval2(8 * freq * xFloat, 8 * freq * yFloat)// +
+             //heightBias * float64(height - y)
 
       //h  = math.Pow(h, float64(1 + (y / height)))
       if h > HIGHLANDS {
@@ -812,6 +815,77 @@ func (w World) CalcRock(xBegin, xEnd int,
   c <- 1
 }
 
+func (w *World) FindRuntimePath(start *Location) {
+  graph := CreateGraph(w)
+  frontier := make([]*GraphNode, 1)
+  frontier[0] = graph.getNode(start)
+  cameFrom := make(map[*GraphNode] *GraphNode)
+
+  for i := range frontier {
+    current := frontier[i]
+    neighbours := current.neighbours
+    for n := 0; n < current.numNeighbours; n++ {
+      next := neighbours[n]
+      if cameFrom[next] == nil {
+        frontier = append(frontier, next)
+        cameFrom[next] = current
+      }
+    }
+  }
+}
+
+func (w *World) GeneratePath(start, goal *Location) bool {
+  graph := CreateGraph(w)
+  startNode := graph.getNode(start)
+  goalNode := graph.getNode(goal)
+  frontier := make(NodeQueue, 1)
+  frontier[0] = &SortableNode{startNode, 0}
+  came_from := make(map[*GraphNode] *GraphNode)
+  cost_so_far := make(map[*GraphNode] int)
+  cost_so_far[startNode] = 0
+
+  found := false
+  for i := 0; i < len(frontier); i++ {
+    current := frontier[i].node
+    fmt.Println("current: x = ", current.loc.x, ", y = ", current.loc.y)
+
+    if current == goalNode {
+      fmt.Println("current == goalNode")
+      found = true
+      break
+    }
+
+    neighbours := current.neighbours
+    for n := 0; n < current.numNeighbours; n++ {
+      next := neighbours[n]
+      new_cost := cost_so_far[current] + current.cost[next]
+      next_cost, visited := cost_so_far[next]
+      //fmt.Println("new_cost = ", new_cost, ", next_cost = ", next_cost)
+      if !visited || new_cost < next_cost {
+        fmt.Println("next: x = ", next.loc.x, ", y = ", next.loc.y)
+        cost_so_far[next] = new_cost
+        priority := new_cost // + heuristic
+        frontier = append(frontier, &SortableNode{ next, priority })
+        came_from[next] = current
+      }
+    }
+    sort.Sort(NodeQueue(frontier))
+  }
+
+  if found {
+    fmt.Println("path:")
+    next := came_from[goalNode]
+    fmt.Println("x = ", next.loc.x, ", y = ", next.loc.y)
+
+    for ; next != startNode; {
+      next = came_from[next]
+      fmt.Println("x = ", next.loc.x, ", y = ", next.loc.y)
+      next.loc.addFeature(PATH_FEATURE)
+    }
+  }
+  return found
+}
+
 func GenerateMap(hFreq, mFreq, sFreq, tFreq, pFreq, rFreq float64,
                  width, height, numCPUs int) {
   rand.Seed(time.Now().UTC().UnixNano())
@@ -913,6 +987,12 @@ func GenerateMap(hFreq, mFreq, sFreq, tFreq, pFreq, rFreq float64,
   }
   c = make(chan int, numCPUs)
 
+  world.FindRuntimePath(world.Location(0, 0))
+  world.GeneratePath(world.Location(0, 0),
+                     world.Location(width - 1, height - 1))
+  world.GeneratePath(world.Location(width - 1, 0),
+                     world.Location(width - 1, height - 1))
+
   fmt.Println("Duration: ", time.Now().Sub(start));
   fmt.Println("Number of peaks: ", len(world.peaks));
   fmt.Println("Numer of lakes: ", len(world.lakes));
@@ -921,9 +1001,9 @@ func GenerateMap(hFreq, mFreq, sFreq, tFreq, pFreq, rFreq float64,
 }
 
 func main() {
-  width := flag.Int("width", 768, "map width")
-  height := flag.Int("height", 512, "map height")
-  hFreq := flag.Float64("hFreq", 5, "height noise frequency")
+  width := flag.Int("width", 64, "map width")
+  height := flag.Int("height", 64, "map height")
+  hFreq := flag.Float64("hFreq", 0.8, "height noise frequency")
   mFreq := flag.Float64("mFreq", 2, "moisture noise frequency")
   sFreq := flag.Float64("sFreq", 20, "soil depth noise frequency")
   tFreq := flag.Float64("tFreq", 200, "tree noise frequency")

@@ -100,7 +100,7 @@ var BIOME_PLANTS = [BIOMES] []int {
   // FENLAND
   { SMALL_GRASS, LARGE_GRASS, WHITE_FLOWER, RED_FLOWER, YELLOW_FLOWER },
   // WOODLAND
-  { PURPLE_FLOWER, BLUE_FLOWER, MUSHROOM_3, MUSHROOM_4, MUSHROOM_5 },
+  { PURPLE_FLOWER, BLUE_FLOWER, RED_FLOWER },
   // FOREST
   { PURPLE_FLOWER, BLUE_FLOWER, MUSHROOM_0, MUSHROOM_1, MUSHROOM_2, MUSHROOM_3,
     MUSHROOM_4, MUSHROOM_5 },
@@ -140,6 +140,7 @@ type MapRenderer struct {
   treeSheet *SpriteSheet
   plantSheet *SpriteSheet
   rockSheet *SpriteSheet
+  pathSheet *SpriteSheet
   mapImg draw.Image
 }
 
@@ -154,6 +155,7 @@ func CreateMapRenderer(width, height int) *MapRenderer {
   render.treeSheet = CreateSheet("trees.png", NUM_TREES, 2)
   render.rockSheet = CreateSheet("rocks.png", NUM_ROCKS, 1)
   render.plantSheet = CreateSheet("plants.png", NUM_PLANTS, 1)
+  render.pathSheet = CreateSheet("outdoor_path_tiles.png", NUM_PATHS, 6)
   return render
 }
 
@@ -201,6 +203,12 @@ func (render *MapRenderer) DrawFeatures(loc *Location, biome uint8, x, y int) {
     row := TILE_ROWS[loc.nearbyBiome]
     render.floorSheet.DrawFeature(x, y, row * MAX_TILE_COLUMNS + col,
                                   render.mapImg)
+  }
+
+  if loc.hasFeature(PATH_FEATURE) {
+    col := 1
+    row := 1
+    render.pathSheet.DrawFeature(x, y, row * NUM_PATHS + col, render.mapImg)
   }
 
   if biome != RIVER {
@@ -277,7 +285,7 @@ func (render *MapRenderer) ParallelDraw(w *World, xBegin, xEnd int, c chan int) 
           biome = RIVER
         }
         render.DrawRiverBankFeature(x, y, loc.riverBank, biome)
-        //render.DrawFeatures(loc, biome, x, y)
+        render.DrawFeatures(loc, biome, x, y)
       } else if loc.isRiver {
         render.DrawFloorTile(x, y, RIVER)
         render.DrawFeatures(loc, RIVER, x, y)
