@@ -658,19 +658,18 @@ func (world World) CalcHeight(xBegin, xEnd int,
   freq := world.hFreq
   width := world.width
   height := world.height
-  //heightBias := float64(3 / height)
 
   for y := 0; y < height; y++ {
     for x := xBegin; x < xEnd; x++ {
       xFloat := float64(x) / float64(width)
       yFloat := float64(y) / float64(height)
+      heightBias := math.Sin(xFloat * math.Pi)
       h := 1 * noise.Eval2(freq * xFloat, freq * yFloat) +
              0.50 * noise.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
              0.25 * noise.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
-             0.125 * noise.Eval2(8 * freq * xFloat, 8 * freq * yFloat)// +
-             //heightBias * float64(height - y)
+             0.125 * noise.Eval2(8 * freq * xFloat, 8 * freq * yFloat) -
+             heightBias
 
-      //h  = math.Pow(h, float64(1 + (y / height)))
       if h > HIGHLANDS {
         world.SetTerrace(x, y, 4)
       } else if h > MIDLANDS {
@@ -847,7 +846,7 @@ func (w *World) GeneratePath(start, goal *Location) bool {
   found := false
   for i := 0; i < len(frontier); i++ {
     current := frontier[i].node
-    fmt.Println("current: x = ", current.loc.x, ", y = ", current.loc.y)
+    //fmt.Println("current: x = ", current.loc.x, ", y = ", current.loc.y)
 
     if current == goalNode {
       fmt.Println("current == goalNode")
@@ -862,7 +861,7 @@ func (w *World) GeneratePath(start, goal *Location) bool {
       next_cost, visited := cost_so_far[next]
       //fmt.Println("new_cost = ", new_cost, ", next_cost = ", next_cost)
       if !visited || new_cost < next_cost {
-        fmt.Println("next: x = ", next.loc.x, ", y = ", next.loc.y)
+        //fmt.Println("next: x = ", next.loc.x, ", y = ", next.loc.y)
         cost_so_far[next] = new_cost
         priority := new_cost // + heuristic
         frontier = append(frontier, &SortableNode{ next, priority })
