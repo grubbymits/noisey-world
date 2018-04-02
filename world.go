@@ -13,7 +13,7 @@ import (
 
 import "github.com/ojrac/opensimplex-go"
 
-const REGION_SIZE = 16
+const REGION_SIZE = 8
 const REGION_AREA = REGION_SIZE * REGION_SIZE
 
 var TREE_DENSITY = [BIOMES]int {
@@ -66,7 +66,6 @@ const BEACH_LEVEL = WATER_LEVEL + 0.05
 const LOWLANDS = BEACH_LEVEL + 0.3
 const MIDLANDS = LOWLANDS + 0.3
 const HIGHLANDS = MIDLANDS + 0.3
-const WATER_SATURATION = 100
 const NO_SOIL = -1.5
 const DRY = -0.5
 const MOIST = 0
@@ -249,10 +248,10 @@ func (w World) isRiverValid(centre *Location) bool {
   return true
 }
 
-func (w World) AddWater(loc *Location) {
+func (w World) AddWater(loc *Location, saturate float64) {
   loc.water += loc.moisture
   loc.water -= loc.soilDepth
-  if loc.water > WATER_SATURATION && loc.biome != OCEAN {
+  if loc.water > saturate && loc.biome != OCEAN {
     loc.isRiver = true
     west := w.Location(loc.x - 1, loc.y)
     east := w.Location(loc.x + 1, loc.y)
@@ -275,7 +274,7 @@ func (w World) AddWater(loc *Location) {
   }
 }
 
-func (w World) AddRivers() {
+func (w World) AddRivers(saturate float64) {
   queue := make([]*Location, len(w.peaks))
   i := 0
   totalWater := 0.0
@@ -318,12 +317,12 @@ func (w World) AddRivers() {
     }
 
     if w.isRiverValid(loc) {
-      w.AddWater(loc)
+      w.AddWater(loc, saturate)
     } else {
       if loc.y + 1 < w.height {
         south := w.Location(loc.x, loc.y + 1)
         if w.isRiverValid(south) {
-          w.AddWater(south)
+          w.AddWater(south, saturate)
         }
       }
     }
@@ -653,8 +652,8 @@ func (w World) CalcGradient(c chan int) {
   c <- 1
 }
 
-func (world World) CalcHeight(xBegin, xEnd int,
-                                 noise *opensimplex.Noise, c chan int) {
+func (world World) CalcHeight(xBegin, xEnd int, baseline float64,
+                              noise *opensimplex.Noise, c chan int) {
   freq := world.hFreq
   width := world.width
   height := world.height
@@ -668,7 +667,7 @@ func (world World) CalcHeight(xBegin, xEnd int,
              0.50 * noise.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
              0.25 * noise.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
              0.125 * noise.Eval2(8 * freq * xFloat, 8 * freq * yFloat) -
-             heightBias
+             heightBias + baseline
 
       if h > HIGHLANDS {
         world.SetTerrace(x, y, 4)
@@ -885,7 +884,8 @@ func (w *World) GeneratePath(start, goal *Location) bool {
   return found
 }
 
-func GenerateMap(hFreq, mFreq, sFreq, tFreq, pFreq, rFreq float64,
+func GenerateMap(hFreq, heightBaseline, mFreq, water, saturate,
+                 sFreq, tFreq, pFreq, rFreq float64,
                  width, height, numCPUs int) {
   rand.Seed(time.Now().UTC().UnixNano())
   hSeed := rand.Int63()
@@ -907,7 +907,8 @@ func GenerateMap(hFreq, mFreq, sFreq, tFreq, pFreq, rFreq float64,
   pNoise := opensimplex.NewWithSeed(pSeed)
   rNoise := opensimplex.NewWithSeed(rSeed)
 
-  world := CreateWorld(width, height, hFreq, mFreq, sFreq, tFreq, pFreq, rFreq, 10)
+  world := CreateWorld(width, height, hFreq, mFreq, sFreq, tFreq, pFreq, rFreq,
+                       water)
 
   start := time.Now()
 
@@ -916,8 +917,8 @@ func GenerateMap(hFreq, mFreq, sFreq, tFreq, pFreq, rFreq float64,
   c := make(chan int, numCPUs)
   for i := 0; i < numCPUs; i++ {
     go world.CalcHeight(i * width / numCPUs,
-                            (i + 1) * width / numCPUs,
-                            hNoise, c)
+                        (i + 1) * width / numCPUs,
+                        heightBaseline, hNoise, c)
   }
   for i := 0; i < numCPUs; i++ {
     <-c
@@ -956,7 +957,7 @@ func GenerateMap(hFreq, mFreq, sFreq, tFreq, pFreq, rFreq float64,
     <-c
   }
 
-  world.AddRivers()
+  world.AddRivers(saturate)
 
   c = make(chan int, numCPUs)
   for i := 0; i < numCPUs; i++ {
@@ -1001,26 +1002,35 @@ func GenerateMap(hFreq, mFreq, sFreq, tFreq, pFreq, rFreq float64,
 
 func main() {
   width := flag.Int("width", 64, "map width")
-  height := flag.Int("height", 64, "map height")
+  height := flag.Int("height", 48, "map height")
   hFreq := flag.Float64("hFreq", 0.8, "height noise frequency")
+  bias := flag.Float64("bias", 0.0, "height bias")
   mFreq := flag.Float64("mFreq", 2, "moisture noise frequency")
+  water := flag.Float64("water", 10, "water")
+  saturate := flag.Float64("saturate", 100, "water saturation level") 
   sFreq := flag.Float64("sFreq", 20, "soil depth noise frequency")
   tFreq := flag.Float64("tFreq", 200, "tree noise frequency")
   pFreq := flag.Float64("pFreq", 200, "plant noise frequency")
   rFreq := flag.Float64("rFreq", 200, "rock noise frequency")
-  threads := flag.Int("cpus", runtime.NumCPU(), "number of cores to use")
+  threads := flag.Int("threads", runtime.NumCPU(), "number of cores to use")
 
   flag.Parse()
 
   if *width % (REGION_SIZE * *threads) != 0 {
-    fmt.Println("width needs to be a factor of", *threads * REGION_SIZE)
+    fmt.Println("With a region size of", REGION_SIZE,
+                ", width needs to be a factor of", *threads * REGION_SIZE,
+                "to use", *threads, "threads.")
     return
   } else if *height % (REGION_SIZE * *threads) != 0 {
-    fmt.Println("height needs to be a factor of", *threads * REGION_SIZE)
+    fmt.Println("With a region size of", REGION_SIZE,
+                ", height needs to be a factor of", *threads * REGION_SIZE,
+                "to use", *threads, "threads.")
     return
   }
 
   fmt.Println("width, height, threads")
   fmt.Println(*width, ",", *height, ",", *threads)
-  GenerateMap(*hFreq, *mFreq, *sFreq, *tFreq, *pFreq, *rFreq, *width, *height, *threads)
+  GenerateMap(*hFreq, *bias, *mFreq, *water, *saturate,
+              *sFreq, *tFreq, *pFreq, *rFreq,
+              *width, *height, *threads)
 }
