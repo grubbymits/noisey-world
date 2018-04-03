@@ -976,6 +976,7 @@ func GenerateMap(hFreq, heightBaseline, mFreq, water, saturate,
   fmt.Println("Numer of lakes: ", len(world.lakes));
 
   DrawMap(world, hSeed, mSeed, sSeed, tSeed, rSeed, numCPUs)
+  ExportJSON(world)
 }
 
 func main() {
