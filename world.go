@@ -546,7 +546,7 @@ func (w World) AnalyseRegions(xBegin, xEnd int, c chan int) {
   c <- 1
 }
 
-func (w World) CalcGradient(c chan int) {
+func (w World) CalcGradient() {
   width := w.width
   height := w.height
 
@@ -635,7 +635,7 @@ func (w World) CalcGradient(c chan int) {
         }
       }
 
-      if !hasPredecessor {
+      if !hasPredecessor && w.Location(x, y).height >= LOWLANDS {
         w.addPeak(w.Location(x, y))
       } else if !hasSuccessor {
         w.addLake(w.Location(x, y))
@@ -649,7 +649,6 @@ func (w World) CalcGradient(c chan int) {
       }
     }
   }
-  c <- 1
 }
 
 func (world World) CalcHeight(xBegin, xEnd int, baseline float64,
@@ -914,39 +913,24 @@ func GenerateMap(hFreq, heightBaseline, mFreq, water, saturate,
 
   // Height can be computed in parallel, but needs to happen before anything
   // else.
-  c := make(chan int, numCPUs)
+  numThreads := 6 * numCPUs
+  c := make(chan int, numThreads)
   for i := 0; i < numCPUs; i++ {
-    go world.CalcHeight(i * width / numCPUs,
-                        (i + 1) * width / numCPUs,
-                        heightBaseline, hNoise, c)
+    xBegin := i * width / numCPUs
+    xEnd := (i + 1) * width / numCPUs
+    go world.CalcHeight(xBegin, xEnd, heightBaseline, hNoise, c)
+    go world.CalcMoisture(xBegin, xEnd, mNoise, c)
+    go world.CalcSoilDepth(xBegin, xEnd,  sNoise, c)
+    go world.CalcTrees(xBegin, xEnd, tNoise, c)
+    go world.CalcPlants(xBegin, xEnd, pNoise, c)
+    go world.CalcRock(xBegin, xEnd, rNoise, c)
   }
-  for i := 0; i < numCPUs; i++ {
+
+  for i := 0; i < numThreads; i++ {
     <-c
   }
 
-  c = make(chan int, 5*numCPUs + 1)
-  go world.CalcGradient(c);
-
-  for i := 0; i < numCPUs; i++ {
-    go world.CalcMoisture(i * width / numCPUs,
-                          (i + 1) * width / numCPUs,
-                          mNoise, c)
-    go world.CalcSoilDepth(i * width / numCPUs,
-                           (i + 1) * width / numCPUs,
-                           sNoise, c)
-    go world.CalcTrees(i * width / numCPUs,
-                         (i + 1) * width / numCPUs,
-                         tNoise, c)
-    go world.CalcPlants(i * width / numCPUs,
-                        (i + 1) * width / numCPUs,
-                        pNoise, c)
-    go world.CalcRock(i * width / numCPUs,
-                         (i + 1) * width / numCPUs,
-                         rNoise, c)
-  }
-  for i := 0; i < 5*numCPUs + 1; i++ {
-    <-c
-  }
+  world.CalcGradient();
 
   c = make(chan int, numCPUs)
   for i := 0; i < numCPUs; i++ {
@@ -959,39 +943,33 @@ func GenerateMap(hFreq, heightBaseline, mFreq, water, saturate,
 
   world.AddRivers(saturate)
 
-  c = make(chan int, numCPUs)
+  numThreads = numCPUs * 2
+  c = make(chan int, numThreads)
   for i := 0; i < numCPUs; i++ {
-    go world.AddRiverBanks(i * width / numCPUs,
-                           (i + 1) * width / numCPUs, c)
+    xBegin := i * width / numCPUs
+    xEnd := (i + 1) * width / numCPUs
+    go world.AddRiverBanks(xBegin, xEnd, c)
+    go world.AddGroundFeature(xBegin, xEnd, c)
   }
-  for i := 0; i < numCPUs; i++ {
+  for i := 0; i < numThreads; i++ {
     <-c
   }
 
   c = make(chan int, numCPUs)
   for i := 0; i < numCPUs; i++ {
-    go world.AddGroundFeature(i * width / numCPUs,
-                              (i + 1) * width / numCPUs, c)
+    xBegin := i * width / numCPUs
+    xEnd := (i + 1) * width / numCPUs
+    go world.AnalyseRegions(xBegin, xEnd, c)
   }
   for i := 0; i < numCPUs; i++ {
     <-c
   }
 
-  c = make(chan int, numCPUs)
-  for i := 0; i < numCPUs; i++ {
-    go world.AnalyseRegions(i * width / numCPUs,
-                            (i + 1) * width / numCPUs, c)
-  }
-  for i := 0; i < numCPUs; i++ {
-    <-c
-  }
-  c = make(chan int, numCPUs)
-
-  world.FindRuntimePath(world.Location(0, 0))
-  world.GeneratePath(world.Location(0, 0),
-                     world.Location(width - 1, height - 1))
-  world.GeneratePath(world.Location(width - 1, 0),
-                     world.Location(width - 1, height - 1))
+  //world.FindRuntimePath(world.Location(0, 0))
+  //world.GeneratePath(world.Location(0, 0),
+    //                 world.Location(width - 1, height - 1))
+  //world.GeneratePath(world.Location(width - 1, 0),
+    //                 world.Location(width - 1, height - 1))
 
   fmt.Println("Duration: ", time.Now().Sub(start));
   fmt.Println("Number of peaks: ", len(world.peaks));
