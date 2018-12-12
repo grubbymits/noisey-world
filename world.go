@@ -6,7 +6,6 @@ import (
   "fmt"
   "math"
   "math/rand"
-  "runtime"
   "sort"
   "time"
 )
@@ -289,6 +288,9 @@ func (w World) AddRivers(saturate float64) {
 
   // Iterate through all queue, which will hold every location eventually.
   for n := 0; n < w.height * w.width; n++ {
+		if len(queue) == 0 {
+			break
+		}
     loc := queue[0]
     queue = queue[1:]
 
@@ -656,17 +658,20 @@ func (world World) CalcHeight(xBegin, xEnd int, baseline float64,
   freq := world.hFreq
   width := world.width
   height := world.height
+	n := *noise;
 
   for y := 0; y < height; y++ {
+    yFloat := float64(y) / float64(height)
+    yBias := 0.0 //math.Sin((1 * math.Pi + yFloat) * 2 * math.Pi)
     for x := xBegin; x < xEnd; x++ {
       xFloat := float64(x) / float64(width)
-      yFloat := float64(y) / float64(height)
-      heightBias := math.Sin(xFloat * math.Pi)
-      h := 1 * noise.Eval2(freq * xFloat, freq * yFloat) +
-             0.50 * noise.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
-             0.25 * noise.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
-             0.125 * noise.Eval2(8 * freq * xFloat, 8 * freq * yFloat) -
-             heightBias + baseline
+			xBias :=  0.0 //math.Sin((1 * math.Pi + xFloat) * 2 * math.Pi)
+      h := baseline +
+					 0.75 * n.Eval2(freq * xFloat, freq * yFloat) -
+           0.50 * n.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
+           0.25 * n.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
+           0.125 * n.Eval2(8 * freq * xFloat, 8 * freq * yFloat) -
+					 (xBias + yBias)
 
       if h > HIGHLANDS {
         world.SetTerrace(x, y, 4)
@@ -690,15 +695,16 @@ func (world World) CalcSoilDepth(xBegin, xEnd int,
   freq := world.sFreq
   width := world.width
   height := world.height
+	n := *noise
 
   for y := 0; y < height; y++ {
     for x := xBegin; x < xEnd; x++ {
       xFloat := float64(x) / float64(width)
       yFloat := float64(y) / float64(height)
-      s := 1 * noise.Eval2(freq * xFloat, freq * yFloat) +
-             0.50 * noise.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
-             0.25 * noise.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
-             0.125 * noise.Eval2(8 * freq * xFloat, 8 * freq * yFloat)
+      s := 1 * n.Eval2(freq * xFloat, freq * yFloat) +
+             0.50 * n.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
+             0.25 * n.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
+             0.125 * n.Eval2(8 * freq * xFloat, 8 * freq * yFloat)
 
       s -= world.Height(x, y)
       world.SetSoilDepth(x, y, s)
@@ -713,15 +719,16 @@ func (w World) CalcMoisture(xBegin, xEnd int,
   freq := w.mFreq
   width := w.width
   height := w.height
+	n := *noise
 
   for y := 0; y < height; y++ {
     for x := xBegin; x < xEnd; x++ {
       xFloat := float64(x) / float64(width)
       yFloat := float64(y) / float64(height)
-      m := 1.2 * noise.Eval2(freq * xFloat, freq * yFloat) +
-             0.60 * noise.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
-             0.3 * noise.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
-             0.15 * noise.Eval2(8 * freq * xFloat, 8 * freq * yFloat)
+      m := 1.2 * n.Eval2(freq * xFloat, freq * yFloat) +
+             0.60 * n.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
+             0.3 * n.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
+             0.15 * n.Eval2(8 * freq * xFloat, 8 * freq * yFloat)
 
       w.SetMoisture(x, y, m)
     }
@@ -754,15 +761,16 @@ func (w World) CalcTrees(xBegin, xEnd int,
   freq := w.tFreq
   width := w.width
   height := w.height
+	n := *noise
 
   for y := 0; y < height; y++ {
     for x := xBegin; x < xEnd; x++ {
       xFloat := float64(x) / float64(width)
       yFloat := float64(y) / float64(height)
-      f := 1 * noise.Eval2(freq * xFloat, freq * yFloat) +
-             0.50 * noise.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
-             0.25 * noise.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
-             0.125 * noise.Eval2(8 * freq * xFloat, 8 * freq * yFloat)
+      f := 1 * n.Eval2(freq * xFloat, freq * yFloat) +
+             0.50 * n.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
+             0.25 * n.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
+             0.125 * n.Eval2(8 * freq * xFloat, 8 * freq * yFloat)
 
       w.SetTree(x, y, f)
     }
@@ -775,15 +783,16 @@ func (w World) CalcPlants(xBegin, xEnd int,
   freq := w.pFreq
   width := w.width
   height := w.height
+	n := *noise
 
   for y := 0; y < height; y++ {
     for x := xBegin; x < xEnd; x++ {
       xFloat := float64(x) / float64(width)
       yFloat := float64(y) / float64(height)
-      f := 1 * noise.Eval2(freq * xFloat, freq * yFloat) +
-             0.50 * noise.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
-             0.25 * noise.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
-             0.125 * noise.Eval2(8 * freq * xFloat, 8 * freq * yFloat)
+      f := 1 * n.Eval2(freq * xFloat, freq * yFloat) +
+             0.50 * n.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
+             0.25 * n.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
+             0.125 * n.Eval2(8 * freq * xFloat, 8 * freq * yFloat)
 
       w.SetPlant(x, y, f)
     }
@@ -796,15 +805,16 @@ func (w World) CalcRock(xBegin, xEnd int,
   freq := w.rFreq
   width := w.width
   height := w.height
+	n := *noise
 
   for y := 0; y < height; y++ {
     for x := xBegin; x < xEnd; x++ {
       xFloat := float64(x) / float64(width)
       yFloat := float64(y) / float64(height)
-      r := 1 * noise.Eval2(freq * xFloat, freq * yFloat) +
-             0.50 * noise.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
-             0.25 * noise.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
-             0.125 * noise.Eval2(8 * freq * xFloat, 8 * freq * yFloat)
+      r := 1 * n.Eval2(freq * xFloat, freq * yFloat) +
+             0.50 * n.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
+             0.25 * n.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
+             0.125 * n.Eval2(8 * freq * xFloat, 8 * freq * yFloat)
 
       w.SetRock(x, y, r)
     }
@@ -899,12 +909,12 @@ func GenerateMap(hFreq, heightBaseline, mFreq, water, saturate,
   fmt.Println("tree seed:", tSeed)
   fmt.Println("plant seed:", pSeed)
   fmt.Println("rock seed:", rSeed)
-  hNoise := opensimplex.NewWithSeed(hSeed)
-  mNoise := opensimplex.NewWithSeed(mSeed)
-  sNoise := opensimplex.NewWithSeed(sSeed)
-  tNoise := opensimplex.NewWithSeed(tSeed)
-  pNoise := opensimplex.NewWithSeed(pSeed)
-  rNoise := opensimplex.NewWithSeed(rSeed)
+  hNoise := opensimplex.New(hSeed)
+  mNoise := opensimplex.New(mSeed)
+  sNoise := opensimplex.New(sSeed)
+  tNoise := opensimplex.New(tSeed)
+  pNoise := opensimplex.New(pSeed)
+  rNoise := opensimplex.New(rSeed)
 
   world := CreateWorld(width, height, hFreq, mFreq, sFreq, tFreq, pFreq, rFreq,
                        water)
@@ -918,12 +928,12 @@ func GenerateMap(hFreq, heightBaseline, mFreq, water, saturate,
   for i := 0; i < numCPUs; i++ {
     xBegin := i * width / numCPUs
     xEnd := (i + 1) * width / numCPUs
-    go world.CalcHeight(xBegin, xEnd, heightBaseline, hNoise, c)
-    go world.CalcMoisture(xBegin, xEnd, mNoise, c)
-    go world.CalcSoilDepth(xBegin, xEnd,  sNoise, c)
-    go world.CalcTrees(xBegin, xEnd, tNoise, c)
-    go world.CalcPlants(xBegin, xEnd, pNoise, c)
-    go world.CalcRock(xBegin, xEnd, rNoise, c)
+    go world.CalcHeight(xBegin, xEnd, heightBaseline, &hNoise, c)
+    go world.CalcMoisture(xBegin, xEnd, &mNoise, c)
+    go world.CalcSoilDepth(xBegin, xEnd,  &sNoise, c)
+    go world.CalcTrees(xBegin, xEnd, &tNoise, c)
+    go world.CalcPlants(xBegin, xEnd, &pNoise, c)
+    go world.CalcRock(xBegin, xEnd, &rNoise, c)
   }
 
   for i := 0; i < numThreads; i++ {
@@ -941,7 +951,7 @@ func GenerateMap(hFreq, heightBaseline, mFreq, water, saturate,
     <-c
   }
 
-  world.AddRivers(saturate)
+  //world.AddRivers(saturate)
 
   numThreads = numCPUs * 2
   c = make(chan int, numThreads)
@@ -980,6 +990,7 @@ func GenerateMap(hFreq, heightBaseline, mFreq, water, saturate,
 }
 
 func main() {
+	// 64 x 48 = 1024 x 768
   width := flag.Int("width", 64, "map width")
   height := flag.Int("height", 48, "map height")
   hFreq := flag.Float64("hFreq", 0.8, "height noise frequency")
@@ -991,7 +1002,7 @@ func main() {
   tFreq := flag.Float64("tFreq", 200, "tree noise frequency")
   pFreq := flag.Float64("pFreq", 200, "plant noise frequency")
   rFreq := flag.Float64("rFreq", 200, "rock noise frequency")
-  threads := flag.Int("threads", runtime.NumCPU(), "number of cores to use")
+  threads := flag.Int("threads", 1, "number of cores to use")
 
   flag.Parse()
 
