@@ -18,46 +18,46 @@ const REGION_AREA = REGION_SIZE * REGION_SIZE
 var TREE_DENSITY = [BIOMES]int {
   0,  // OCEAN
   0,  // RIVER
-  REGION_SIZE / 1024,  // BEACH
-  REGION_AREA / 512,  // DRY_ROCK
-  REGION_AREA / 256,  // MOIST_ROCK
-  REGION_AREA / 64,   // HEATHLAND
-  REGION_AREA / 32,   // SHRUBLAND
-  REGION_AREA / 96,  // GRASSLAND
-  REGION_AREA / 128,  // MOORLAND
-  REGION_AREA / 128,  // FENLAND
-  REGION_AREA / 16,   // WOODLAND
-  REGION_AREA / 8,   // FOREST
+  0,  // BEACH
+  1,  // DRY_ROCK
+  2,  // MOIST_ROCK
+  3,  // HEATHLAND
+  4,  // SHRUBLAND
+  3,  // GRASSLAND
+  2,  // MOORLAND
+  4,  // FENLAND
+  8,  // WOODLAND
+  10, // FOREST
 }
 
 var PLANT_DENSITY = [BIOMES]int {
   0,
-  REGION_SIZE / 32,   // RIVER
+  3,  // RIVER
   0,
-  REGION_AREA / 128,  // DRY_ROCK
-  REGION_AREA / 96,   // MOIST_ROCK
-  REGION_AREA / 64,   // HEATHLAND
-  REGION_AREA / 16,   // SHRUBLAND
-  REGION_AREA / 16,   // GRASSLAND
-  REGION_AREA / 16,   // MOORLAND
-  REGION_AREA / 16,   // FENLAND
-  REGION_AREA / 64,   // WOODLAND
-  REGION_AREA / 128,  // FOREST
+  1,  // DRY_ROCK
+  2,  // MOIST_ROCK
+  6, // HEATHLAND
+  9, // SHRUBLAND
+  7, // GRASSLAND
+  5, // MOORLAND
+  8, // FENLAND
+  5,  // WOODLAND
+  4,  // FOREST
 }
 
 var ROCK_DENSITY = [BIOMES]int {
-  REGION_SIZE / 32,   // OCEAN
-  REGION_SIZE / 32,   // RIVER
-  REGION_SIZE / 32,   // BEACH
-  REGION_AREA / 16,   // DRY_ROCK
-  REGION_AREA / 16,   // MOIST_ROCK
-  REGION_AREA / 1024, // HEATHLAND
-  REGION_AREA / 512,  // SHRUBLAND
-  REGION_AREA / 256,  // GRASSLAND
-  REGION_AREA / 256,  // MOORLAND
-  REGION_AREA / 1024, // FENLAND
-  REGION_AREA / 512,  // WOODLAND
-  REGION_AREA / 512,  // FOREST
+  0,  // OCEAN
+  2,  // RIVER
+  2,  // BEACH
+  10, // DRY_ROCK
+  10, // MOIST_ROCK
+  1,  // HEATHLAND
+  1,  // SHRUBLAND
+  2,  // GRASSLAND
+  6,  // MOORLAND
+  1,  // FENLAND
+  2,  // WOODLAND
+  1,  // FOREST
 }
 
 const WATER_LEVEL = -0.35
@@ -529,13 +529,28 @@ func (w World) AnalyseRegions(xBegin, xEnd int, c chan int) {
         locVal := heap.Pop(&treeHeap).(*LocVal)
         w.addFeature(locVal.x, locVal.y, TREE_FEATURE);
       }
-      for i := 0; i < ROCK_DENSITY[maxBiome]; i++ {
+      for i := 0; i < ROCK_DENSITY[maxBiome]; {
         locVal := heap.Pop(&rockHeap).(*LocVal)
+        if w.Location(locVal.x, locVal.y).hasFeature(TREE_FEATURE) {
+          if rockHeap.Len() == 0 {
+            break
+          }
+          continue
+        }
         w.addFeature(locVal.x, locVal.y, ROCK_FEATURE);
+        i++
       }
       for i := 0; i < PLANT_DENSITY[maxBiome]; i++ {
         locVal := heap.Pop(&plantHeap).(*LocVal)
+        if w.Location(locVal.x, locVal.y).hasFeature(TREE_FEATURE) ||
+           w.Location(locVal.x, locVal.y).hasFeature(ROCK_FEATURE) {
+          if plantHeap.Len() == 0 {
+            break
+          }
+          continue
+        }
         w.addFeature(locVal.x, locVal.y, PLANT_FEATURE);
+        i++
       }
     }
   }
@@ -664,7 +679,7 @@ func (world World) CalcHeight(xBegin, xEnd int,
       xFloat := float64(x) / float64(width)
       xBias :=  0.0
       h := base +
-           0.75 * n.Eval2(freq * xFloat, freq * yFloat) -
+           0.75 * n.Eval2(freq * xFloat, freq * yFloat) +
            0.50 * n.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
            0.25 * n.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
            0.125 * n.Eval2(8 * freq * xFloat, 8 * freq * yFloat) +
