@@ -249,7 +249,6 @@ func (w World) isRiverValid(centre *Location) bool {
 
 func (w World) AddWater(loc *Location, saturate float64) {
   loc.water += loc.moisture
-  loc.water -= loc.soilDepth
   if loc.water > saturate && loc.biome != OCEAN {
     loc.isRiver = true
     west := w.Location(loc.x - 1, loc.y)
@@ -279,7 +278,9 @@ func (w World) AddRivers(saturate float64) {
   totalWater := 0.0
 
   for loc, _ := range w.peaks {
-    loc.water = w.water * loc.moisture * loc.height
+    loc.water = (w.water / float64(len(w.peaks))) +
+                (50 * loc.moisture) +
+                (10 * loc.height)
     totalWater += loc.water
     queue[i] = loc
     i++
@@ -288,9 +289,9 @@ func (w World) AddRivers(saturate float64) {
 
   // Iterate through all queue, which will hold every location eventually.
   for n := 0; n < w.height * w.width; n++ {
-		if len(queue) == 0 {
-			break
-		}
+    if len(queue) == 0 {
+      break
+    }
     loc := queue[0]
     queue = queue[1:]
 
@@ -320,13 +321,6 @@ func (w World) AddRivers(saturate float64) {
 
     if w.isRiverValid(loc) {
       w.AddWater(loc, saturate)
-    } else {
-      if loc.y + 1 < w.height {
-        south := w.Location(loc.x, loc.y + 1)
-        if w.isRiverValid(south) {
-          w.AddWater(south, saturate)
-        }
-      }
     }
 
     // Discover all of the Location's successors and add them to the queue if
@@ -653,25 +647,36 @@ func (w World) CalcGradient() {
   }
 }
 
-func (world World) CalcHeight(xBegin, xEnd int, baseline float64,
+func (world World) CalcHeight(xBegin, xEnd int,
+                              base, edgeUp, edgeDown, falloff float64,
                               noise *opensimplex.Noise, c chan int) {
   freq := world.hFreq
   width := world.width
   height := world.height
-	n := *noise;
+  n := *noise;
+  cx := float64(width / 2);
+  cy := float64(height / 2);
 
   for y := 0; y < height; y++ {
     yFloat := float64(y) / float64(height)
-    yBias := 0.0 //math.Sin((1 * math.Pi + yFloat) * 2 * math.Pi)
+    yBias := 0.0
     for x := xBegin; x < xEnd; x++ {
       xFloat := float64(x) / float64(width)
-			xBias :=  0.0 //math.Sin((1 * math.Pi + xFloat) * 2 * math.Pi)
-      h := baseline +
-					 0.75 * n.Eval2(freq * xFloat, freq * yFloat) -
+      xBias :=  0.0
+      h := base +
+           0.75 * n.Eval2(freq * xFloat, freq * yFloat) -
            0.50 * n.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
            0.25 * n.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
-           0.125 * n.Eval2(8 * freq * xFloat, 8 * freq * yFloat) -
-					 (xBias + yBias)
+           0.125 * n.Eval2(8 * freq * xFloat, 8 * freq * yFloat) +
+	   xBias + yBias
+
+      nx := (cx - float64(x)) / cx
+      ny := (cy - float64(y)) / cy
+      distance := float64(2*math.Max(math.Abs(nx), math.Abs(ny)))
+      edgeUp := 0.07
+      edgeDown := 0.5
+      falloff := 1.5
+      h += edgeUp - edgeDown * math.Pow(distance, falloff)
 
       if h > HIGHLANDS {
         world.SetTerrace(x, y, 4)
@@ -714,21 +719,21 @@ func (world World) CalcSoilDepth(xBegin, xEnd int,
 }
 
 func (w World) CalcMoisture(xBegin, xEnd int,
-                                noise *opensimplex.Noise,
-                                c chan int) {
+                            noise *opensimplex.Noise,
+                            c chan int) {
   freq := w.mFreq
   width := w.width
   height := w.height
-	n := *noise
+  n := *noise
 
   for y := 0; y < height; y++ {
     for x := xBegin; x < xEnd; x++ {
       xFloat := float64(x) / float64(width)
       yFloat := float64(y) / float64(height)
-      m := 1.2 * n.Eval2(freq * xFloat, freq * yFloat) +
-             0.60 * n.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
-             0.3 * n.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
-             0.15 * n.Eval2(8 * freq * xFloat, 8 * freq * yFloat)
+      m :=   0.75 * n.Eval2(freq * xFloat, freq * yFloat) +
+             0.50 * n.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
+             0.25 * n.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
+             0.125 * n.Eval2(8 * freq * xFloat, 8 * freq * yFloat)
 
       w.SetMoisture(x, y, m)
     }
@@ -893,7 +898,8 @@ func (w *World) GeneratePath(start, goal *Location) bool {
   return found
 }
 
-func GenerateMap(hFreq, heightBaseline, mFreq, water, saturate,
+func GenerateMap(hFreq, heightBaseline, edgeUp, edgeDown, falloff,
+                 mFreq, water, saturate,
                  sFreq, tFreq, pFreq, rFreq float64,
                  width, height, numCPUs int) {
   rand.Seed(time.Now().UTC().UnixNano())
@@ -928,7 +934,8 @@ func GenerateMap(hFreq, heightBaseline, mFreq, water, saturate,
   for i := 0; i < numCPUs; i++ {
     xBegin := i * width / numCPUs
     xEnd := (i + 1) * width / numCPUs
-    go world.CalcHeight(xBegin, xEnd, heightBaseline, &hNoise, c)
+    go world.CalcHeight(xBegin, xEnd, heightBaseline,
+                        edgeUp, edgeDown, falloff, &hNoise, c)
     go world.CalcMoisture(xBegin, xEnd, &mNoise, c)
     go world.CalcSoilDepth(xBegin, xEnd,  &sNoise, c)
     go world.CalcTrees(xBegin, xEnd, &tNoise, c)
@@ -951,7 +958,7 @@ func GenerateMap(hFreq, heightBaseline, mFreq, water, saturate,
     <-c
   }
 
-  //world.AddRivers(saturate)
+  world.AddRivers(saturate)
 
   numThreads = numCPUs * 2
   c = make(chan int, numThreads)
@@ -990,14 +997,20 @@ func GenerateMap(hFreq, heightBaseline, mFreq, water, saturate,
 }
 
 func main() {
-	// 64 x 48 = 1024 x 768
-  width := flag.Int("width", 64, "map width")
-  height := flag.Int("height", 48, "map height")
-  hFreq := flag.Float64("hFreq", 0.8, "height noise frequency")
+  // 64 x 48 = 1024 x 768
+  // 128 x 96 = 2048 x 1546
+  // 192 x 144 = 3072 x 2304
+  // 192 x 192 = 3072 x 3072
+  width := flag.Int("width", 192, "map width")
+  height := flag.Int("height", 144, "map height")
+  hFreq := flag.Float64("hFreq", 1.6, "height noise frequency")
   bias := flag.Float64("bias", 0.0, "height bias")
-  mFreq := flag.Float64("mFreq", 2, "moisture noise frequency")
-  water := flag.Float64("water", 10, "water")
-  saturate := flag.Float64("saturate", 100, "water saturation level") 
+  edgeUp := flag.Float64("raise-edge", 0.05, "raise edges")
+  edgeDown := flag.Float64("lower-edge", 0.4, "lower edges")
+  falloff := flag.Float64("falloff", 5.0, "falloff rate")
+  mFreq := flag.Float64("mFreq", 1.0, "moisture noise frequency")
+  water := flag.Float64("water", 50, "water")
+  saturate := flag.Float64("saturate", 50, "water saturation level") 
   sFreq := flag.Float64("sFreq", 20, "soil depth noise frequency")
   tFreq := flag.Float64("tFreq", 200, "tree noise frequency")
   pFreq := flag.Float64("pFreq", 200, "plant noise frequency")
@@ -1020,7 +1033,8 @@ func main() {
 
   fmt.Println("width, height, threads")
   fmt.Println(*width, ",", *height, ",", *threads)
-  GenerateMap(*hFreq, *bias, *mFreq, *water, *saturate,
+  GenerateMap(*hFreq, *bias, *edgeUp, *edgeDown, *falloff,
+              *mFreq, *water, *saturate,
               *sFreq, *tFreq, *pFreq, *rFreq,
               *width, *height, *threads)
 }
