@@ -75,6 +75,7 @@ const SHALLOW_SOIL = -0.7
 type World struct {
   width, height int
   locations []Location
+  shoreline []*Location
   regions []Location
   peaks map[*Location]bool
   lakes map[*Location]bool
@@ -90,6 +91,7 @@ func CreateWorld(width, height int, hFreq, mFreq, sFreq, tFreq, pFreq, rFreq,
   w.regions = make([]Location, width * height / REGION_AREA)
   w.peaks = make(map[*Location]bool)
   w.lakes = make(map[*Location]bool)
+  w.shoreline = make([]*Location, 0, 50)
   w.hFreq = hFreq
   w.mFreq = mFreq
   w.sFreq = sFreq
@@ -187,7 +189,7 @@ func (w World) SetPlant(x, y int, p float64) {
 }
 
 func (w World) SetHeight(x, y int, h float64) {
-  w.locations[y * w.width + x].height = h
+  w.Location(x, y).height = h
 }
 
 func (w World) SetTerrace(x, y int, t uint8) {
@@ -195,7 +197,7 @@ func (w World) SetTerrace(x, y int, t uint8) {
 }
 
 func (w World) SetBiome(x, y int, b uint8) {
-  w.locations[y * w.width + x].biome = b
+  w.Location(x, y).biome = b
 }
 
 func (w World) isRiverValid(centre *Location) bool {
@@ -273,8 +275,7 @@ func (w World) AddWater(loc *Location, saturate float64) {
 }
 
 func (w World) AddRivers(saturate float64) {
-  queue := make([]*Location, len(w.peaks))
-  i := 0
+  queue := make([]*Location, 0, len(w.peaks))
   totalWater := 0.0
 
   for loc, _ := range w.peaks {
@@ -282,8 +283,7 @@ func (w World) AddRivers(saturate float64) {
                 (50 * loc.moisture) +
                 (10 * loc.height)
     totalWater += loc.water
-    queue[i] = loc
-    i++
+    queue = append(queue, loc)
   }
   fmt.Println("Total water added:", totalWater)
 
@@ -662,6 +662,25 @@ func (w World) CalcGradient() {
   }
 }
 
+func (w World) FindHighest(xBegin, xEnd int, highest **Location, c chan int) {
+  *highest = w.Location(xBegin, 0)
+
+  for y := 0; y < w.height; y++ {
+    for x := xBegin; x < xEnd; x++ {
+      loc := w.Location(x, y)
+      if loc.hasFeature(TREE_FEATURE) ||
+         loc.hasFeature(ROCK_FEATURE) ||
+         loc.isWall || loc.isRiver || loc.isRiverBank {
+        continue
+      }
+      if loc.height > (*highest).height {
+        *highest = loc
+      }
+    }
+  }
+  c <-1
+}
+
 func (world World) CalcHeight(xBegin, xEnd int,
                               base, edgeUp, edgeDown, falloff float64,
                               noise *opensimplex.Noise, c chan int) {
@@ -868,16 +887,15 @@ func (w *World) GeneratePath(start, goal *Location) bool {
   frontier := make(NodeQueue, 1)
   frontier[0] = &SortableNode{startNode, 0}
   came_from := make(map[*GraphNode] *GraphNode)
-  cost_so_far := make(map[*GraphNode] int)
+  cost_so_far := make(map[*GraphNode] float64)
   cost_so_far[startNode] = 0
 
   found := false
-  for i := 0; i < len(frontier); i++ {
-    current := frontier[i].node
-    //fmt.Println("current: x = ", current.loc.x, ", y = ", current.loc.y)
+  for ; len(frontier) > 0; {
+    current := frontier[0].node
+    frontier = frontier[1:]
 
     if current == goalNode {
-      fmt.Println("current == goalNode")
       found = true
       break
     }
@@ -885,11 +903,10 @@ func (w *World) GeneratePath(start, goal *Location) bool {
     neighbours := current.neighbours
     for n := 0; n < current.numNeighbours; n++ {
       next := neighbours[n]
-      new_cost := cost_so_far[current] + current.cost[next]
+      new_cost := cost_so_far[current] + graph.cost(current, next)
+
       next_cost, visited := cost_so_far[next]
-      //fmt.Println("new_cost = ", new_cost, ", next_cost = ", next_cost)
       if !visited || new_cost < next_cost {
-        //fmt.Println("next: x = ", next.loc.x, ", y = ", next.loc.y)
         cost_so_far[next] = new_cost
         priority := new_cost // + heuristic
         frontier = append(frontier, &SortableNode{ next, priority })
@@ -900,15 +917,15 @@ func (w *World) GeneratePath(start, goal *Location) bool {
   }
 
   if found {
-    fmt.Println("path:")
+    fmt.Println("found a path")
     next := came_from[goalNode]
-    fmt.Println("x = ", next.loc.x, ", y = ", next.loc.y)
 
     for ; next != startNode; {
       next = came_from[next]
-      fmt.Println("x = ", next.loc.x, ", y = ", next.loc.y)
       next.loc.addFeature(PATH_FEATURE)
     }
+  } else {
+    fmt.Println("failed to find a path")
   }
   return found
 }
@@ -942,15 +959,13 @@ func GenerateMap(hFreq, heightBaseline, edgeUp, edgeDown, falloff,
 
   start := time.Now()
 
-  // Height can be computed in parallel, but needs to happen before anything
-  // else.
   numThreads := 6 * numCPUs
   c := make(chan int, numThreads)
   for i := 0; i < numCPUs; i++ {
     xBegin := i * width / numCPUs
     xEnd := (i + 1) * width / numCPUs
-    go world.CalcHeight(xBegin, xEnd, heightBaseline,
-                        edgeUp, edgeDown, falloff, &hNoise, c)
+    go world.CalcHeight(xBegin, xEnd, heightBaseline, edgeUp, edgeDown,
+                        falloff, &hNoise, c)
     go world.CalcMoisture(xBegin, xEnd, &mNoise, c)
     go world.CalcSoilDepth(xBegin, xEnd,  &sNoise, c)
     go world.CalcTrees(xBegin, xEnd, &tNoise, c)
@@ -997,11 +1012,47 @@ func GenerateMap(hFreq, heightBaseline, edgeUp, edgeDown, falloff,
     <-c
   }
 
-  //world.FindRuntimePath(world.Location(0, 0))
-  //world.GeneratePath(world.Location(0, 0),
-    //                 world.Location(width - 1, height - 1))
-  //world.GeneratePath(world.Location(width - 1, 0),
-    //                 world.Location(width - 1, height - 1))
+  for y := 0; y < world.height; y++ {
+    for x := 0; x < world.width; x++ {
+      loc := world.Location(x, y)
+      if loc.biome == BEACH {
+        world.shoreline = append(world.shoreline, loc)
+      }
+    }
+  }
+
+  fmt.Println("size of shoreline: ", len(world.shoreline))
+  lowest := world.shoreline[0]
+  for i := 1; i < len(world.shoreline); i++ {
+    beach := world.shoreline[i]
+    if beach.height < lowest.height {
+      lowest = beach
+    }
+  }
+
+  numThreads = 4
+  highs := make([]*Location, 0, numThreads)
+  c = make(chan int, numThreads)
+  for i := 0; i < numThreads; i++ {
+    xBegin := i * width / numThreads
+    xEnd := (i + 1) * width / numThreads
+    highs = append(highs, nil)
+    go world.FindHighest(xBegin, xEnd, &(highs[i]), c)
+  }
+  for i := 0; i < numThreads; i++ {
+    <-c
+  }
+  highest := highs[0]
+  for i := 1; i < len(highs); i++ {
+    if highs[i].height > highest.height {
+      highest = highs[i]
+    }
+  }
+
+  //for i := 0; i < len(highs); i++ {
+    //world.GeneratePath(lowest, highs[i])
+  //}
+  world.GeneratePath(lowest, highest)
 
   fmt.Println("Duration: ", time.Now().Sub(start));
   fmt.Println("Number of peaks: ", len(world.peaks));

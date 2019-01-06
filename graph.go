@@ -6,14 +6,14 @@ import (
 
 type GraphNode struct {
   neighbours [4]*GraphNode
-  cost map[*GraphNode]int
+  //cost map[*GraphNode]int
   numNeighbours int
   loc *Location
 }
 
 type SortableNode struct {
   node *GraphNode
-  cost int
+  cost float64
 }
 
 type NodeQueue []*SortableNode
@@ -43,7 +43,6 @@ func CreateGraph(w *World) *Graph {
     for x := 0; x < w.width; x++ {
       loc := w.Location(x, y)
       node := g.getNode(loc)
-      node.cost = make(map[*GraphNode] int)
       node.loc = loc
       g.populateNeighbours(loc)
     }
@@ -51,10 +50,13 @@ func CreateGraph(w *World) *Graph {
   return g
 }
 
-func (g *Graph) cost(loc0, loc1 *Location) int {
-  node0 := g.getNode(loc0)
-  node1 := g.getNode(loc1)
-  return node0.cost[node1]
+func (g *Graph) cost(from, to *GraphNode) float64 {
+  loc0 := from.loc
+  loc1 := to.loc
+  cost := 1.0
+  factor := 1.0
+  cost += factor * math.Abs(float64(loc0.height - loc1.height))
+  return cost
 }
 
 func (g *Graph) getNode(loc *Location) *GraphNode {
@@ -73,6 +75,21 @@ func (g *Graph) populateNeighbours(loc *Location) {
   idx := 0
   w := g.w
   node := g.getNode(loc)
+
+  if loc.isWall {
+    neighbour := w.Location(loc.x, loc.y - 1)
+    node.numNeighbours = 0
+
+    if neighbour.isRiver || neighbour.isRiverBank ||
+       neighbour.hasFeature(TREE_FEATURE) || neighbour.hasFeature(ROCK_FEATURE) {
+      return
+    }
+    nodeNeighbour := g.getNode(neighbour)
+    node.neighbours[0] = nodeNeighbour
+    node.numNeighbours = 1
+    return
+  }
+
   for x := -1; x < 2; x++ {
     for y := -1; y < 2; y++ {
       // is loc
@@ -88,24 +105,30 @@ func (g *Graph) populateNeighbours(loc *Location) {
          loc.y + y < 0 || loc.y + y >= w.height {
         continue
       }
-      if loc.isRiver || loc.isRiverBank {
-        continue
-      }
-      if loc.hasFeature(TREE_FEATURE) || loc.hasFeature(ROCK_FEATURE) {
-        continue
-      }
-      cost := 1
       neighbour := w.Location(loc.x + x, loc.y + y)
-      // favour a terrace traversal being up and down a wall tile.
-      if neighbour.isWall {
-        cost += 50
-      } else if neighbour.terrace != loc.terrace {
-        cost += 100
+
+      if neighbour.isRiver || neighbour.isRiverBank {
+        continue
       }
-      cost += int(10 *math.Abs(float64(loc.height - neighbour.height)))
+      if neighbour.hasFeature(TREE_FEATURE) || neighbour.hasFeature(ROCK_FEATURE) {
+        continue
+      }
+
+      // Only cross terraces when moving north
+      if neighbour.terrace != loc.terrace && y != -1 {
+        continue
+      }
+
+      // only allow paths up terraces where there's a section of wall that is
+      // 3 tiles wide.
+      if neighbour.isWall &&
+         !(w.Location(neighbour.x - 1, neighbour.y).isWall &&
+           w.Location(neighbour.x + 1, neighbour.y).isWall) {
+        continue
+      }
+
       nodeNeighbour := g.getNode(neighbour)
       node.neighbours[idx] = nodeNeighbour
-      node.cost[nodeNeighbour] = cost
       idx++
     }
   }

@@ -1,7 +1,6 @@
 package main
 
 import (
-  "fmt"
   "image"
   "image/draw"
   "image/png"
@@ -163,7 +162,6 @@ func CreateSheet(filename string, cols, rows int) *SpriteSheet {
   if err != nil {
     log.Fatal(err)
   }
-  fmt.Println("opened and decoded tilesheet")
 
   sheet := new(SpriteSheet)
   sheet.tileWidth = TILE_WIDTH
