@@ -153,7 +153,7 @@ type SpriteSheet struct {
 }
 
 func CreateSheet(filename string, cols, rows int) *SpriteSheet {
-  tilesheetFile, err := os.Open(filename)
+  tilesheetFile, err := os.Open("res/" + filename)
   if err != nil {
     log.Fatal(err)
   }

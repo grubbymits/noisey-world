@@ -197,6 +197,8 @@ func (render *MapRenderer) DrawRiverBankFeature(x, y int, feat uint, biome uint8
   render.floorSheet.DrawFeature(x, y, idx, render.mapImg)
 }
 
+var drawnLast = false
+
 func (render *MapRenderer) DrawFeatures(loc *Location, biome uint8, x, y int) {
   if loc.isWall {
     row := TILE_ROWS[biome]
@@ -216,9 +218,15 @@ func (render *MapRenderer) DrawFeatures(loc *Location, biome uint8, x, y int) {
   }
 
   if loc.hasFeature(PATH_FEATURE) {
-    col := 1
-    row := 1
-    render.pathSheet.DrawFeature(x, y, row * NUM_PATHS + col, render.mapImg)
+    if !drawnLast {
+      col := 1
+      row := 1
+      if loc.biome == BEACH {
+        row = 5 
+      }
+      render.pathSheet.DrawFeature(x, y, row * NUM_PATHS + col, render.mapImg)
+    }
+    drawnLast = !drawnLast
   }
 
   if biome != RIVER {

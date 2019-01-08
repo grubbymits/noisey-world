@@ -55,6 +55,9 @@ func (g *Graph) cost(from, to *GraphNode) float64 {
   loc1 := to.loc
   cost := 1.0
   factor := 1.0
+  if loc0.terrace != loc1.terrace {
+    factor = 50
+  }
   cost += factor * math.Abs(float64(loc0.height - loc1.height))
   return cost
 }
