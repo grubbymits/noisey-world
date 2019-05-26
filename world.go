@@ -77,8 +77,6 @@ type World struct {
   locations []Location
   shoreline []*Location
   regions []Location
-  peaks map[*Location]bool
-  lakes map[*Location]bool
   hFreq, mFreq, sFreq, tFreq, pFreq, rFreq, water float64
 }
 
@@ -89,8 +87,6 @@ func CreateWorld(width, height int, hFreq, mFreq, sFreq, tFreq, pFreq, rFreq,
   w.height = height;
   w.locations = make([]Location, width * height)
   w.regions = make([]Location, width * height / REGION_AREA)
-  w.peaks = make(map[*Location]bool)
-  w.lakes = make(map[*Location]bool)
   w.shoreline = make([]*Location, 0, 50)
   w.hFreq = hFreq
   w.mFreq = mFreq
@@ -108,14 +104,6 @@ func CreateWorld(width, height int, hFreq, mFreq, sFreq, tFreq, pFreq, rFreq,
     }
   }
   return w
-}
-
-func (w World) addPeak(l *Location) {
-  w.peaks[l] = true
-}
-
-func (w World) addLake(l *Location) {
-  w.lakes[l] = true
 }
 
 func (w World) addFeature(x, y int, feature uint) {
@@ -250,8 +238,8 @@ func (w World) isRiverValid(centre *Location) bool {
 }
 
 func (w World) AddWater(loc *Location, saturate float64) {
-  loc.water += loc.moisture
   if loc.water > saturate && loc.biome != OCEAN {
+    fmt.Println("Adding river tile")
     loc.isRiver = true
     west := w.Location(loc.x - 1, loc.y)
     east := w.Location(loc.x + 1, loc.y)
@@ -275,63 +263,35 @@ func (w World) AddWater(loc *Location, saturate float64) {
 }
 
 func (w World) AddRivers(saturate float64) {
-  queue := make([]*Location, 0, len(w.peaks))
-  totalWater := 0.0
+  queue := make([]Location, len(w.locations))
+  copy(queue, w.locations)
+  sort.Sort(ByHeight(queue))
 
-  for loc, _ := range w.peaks {
-    loc.water = (w.water / float64(len(w.peaks))) +
-                (50 * loc.moisture) +
-                (10 * loc.height)
-    totalWater += loc.water
-    queue = append(queue, loc)
-  }
-  fmt.Println("Total water added:", totalWater)
+  for n := 0; n < len(queue); n++ {
+    loc := queue[n]
 
-  // Iterate through all queue, which will hold every location eventually.
-  for n := 0; n < w.height * w.width; n++ {
-    if len(queue) == 0 {
-      break
-    }
-    loc := queue[0]
-    queue = queue[1:]
-
-    // Receive water from all of the predecessors. 
-    for i := 0; i < loc.numPreds; i++ {
-
-      pred := loc.preds[i]
-
-      if pred.water < 0 {
-        continue
-      }
-      if pred.y > loc.y {
-        continue
-      }
-
-      gradientRatio := 0.0
-      if pred.terrace > loc.terrace {
-        gradientRatio = 1.0;
-      } else {
-        // Calculate percentage of predecessor's water the successor will
-        // receive.
-        gradientRatio = (math.Abs(pred.height) - math.Abs(loc.height)) / pred.totalGradient
-      }
-      water := gradientRatio * pred.water
-      loc.water += water
-    }
-
-    if w.isRiverValid(loc) {
-      w.AddWater(loc, saturate)
-    }
-
-    // Discover all of the Location's successors and add them to the queue if
-    // they've been discovered by all their predecessors.
+    minHeight := loc.height
+    var lowest *Location
     for i := 0; i < loc.numSuccs; i++ {
-      succ := loc.succs[i]
-      succ.discovered++
-      if succ.discovered == succ.numPreds {
-        queue = append(queue, succ)
+      succ := loc.succs[i];
+      if !w.isRiverValid(succ) {
+        continue
+      }
+      if succ.height < minHeight {
+        minHeight = succ.height
+        lowest = succ
       }
     }
+
+    if lowest == nil {
+      continue
+    }
+
+    from := w.Location(loc.x, loc.y)
+    to := w.Location(lowest.x, lowest.y)
+    from.water += from.moisture
+    to.water += from.water
+    w.AddWater(to, saturate)
   }
 }
 
@@ -565,20 +525,20 @@ func (w World) CalcGradient() {
     for x := 0; x < width; x++ {
 
       centreLoc := w.Location(x, y)
-      hasPredecessor := false
-      hasSuccessor := false
+      //hasPredecessor := false
+      //hasSuccessor := false
 
       if y - 1 >= 0 {
         north := w.Location(x, y - 1)
         if north.height <= centreLoc.height {
           centreLoc.addSuccessor(north)
-          hasSuccessor = true
+          //hasSuccessor = true
           if north.terrace < centreLoc.terrace {
             centreLoc.addFeature(HORIZONTAL_SHADOW_FEATURE)
           }
         } else if north.height >= centreLoc.height {
-          centreLoc.addPredecessor(north)
-          hasPredecessor = true
+          //centreLoc.addPredecessor(north)
+          //hasPredecessor = true
           if north.terrace > centreLoc.terrace {
             centreLoc.addFeature(HORIZONTAL_SHADOW_FEATURE)
           }
@@ -589,10 +549,10 @@ func (w World) CalcGradient() {
         south := w.Location(x, y + 1)
         if south.height <= centreLoc.height {
           centreLoc.addSuccessor(south)
-          hasSuccessor = true
+          //hasSuccessor = true
         } else if south.height >= centreLoc.height {
-          centreLoc.addPredecessor(south)
-          hasPredecessor = true
+          //centreLoc.addPredecessor(south)
+          //hasPredecessor = true
         }
       }
 
@@ -600,10 +560,10 @@ func (w World) CalcGradient() {
         east := w.Location(x + 1, y)
         if east.height <= centreLoc.height {
           centreLoc.addSuccessor(east)
-          hasSuccessor = true
+          //hasSuccessor = true
         } else if east.height >= centreLoc.height {
-          centreLoc.addPredecessor(east)
-          hasPredecessor = true
+          //centreLoc.addPredecessor(east)
+          //hasPredecessor = true
           if east.terrace > centreLoc.terrace {
             centreLoc.addFeature(LEFT_SHADOW_FEATURE)
           }
@@ -614,10 +574,10 @@ func (w World) CalcGradient() {
         west := w.Location(x - 1, y)
         if west.height <= centreLoc.height {
           centreLoc.addSuccessor(west)
-          hasSuccessor = true
+          //hasSuccessor = true
         } else if west.height >= centreLoc.height {
-          centreLoc.addPredecessor(west)
-          hasPredecessor = true
+          //centreLoc.addPredecessor(west)
+          //hasPredecessor = true
           if west.terrace > centreLoc.terrace {
             centreLoc.addFeature(RIGHT_SHADOW_FEATURE)
           }
@@ -644,12 +604,6 @@ func (w World) CalcGradient() {
            left.terrace == centreLoc.terrace {
           centreLoc.addFeature(BOTTOM_RIGHT_SHADOW_FEATURE)
         }
-      }
-
-      if !hasPredecessor && w.Location(x, y).height >= LOWLANDS {
-        w.addPeak(w.Location(x, y))
-      } else if !hasSuccessor {
-        w.addLake(w.Location(x, y))
       }
 
       // Calculate the total gradient of the successors, which will be used to
@@ -1049,14 +1003,9 @@ func GenerateMap(hFreq, heightBaseline, edgeUp, edgeDown, falloff,
     }
   }
 
-  //for i := 0; i < len(highs); i++ {
-    //world.GeneratePath(lowest, highs[i])
-  //}
   world.GeneratePath(lowest, highest)
 
   fmt.Println("Duration: ", time.Now().Sub(start));
-  fmt.Println("Number of peaks: ", len(world.peaks));
-  fmt.Println("Numer of lakes: ", len(world.lakes));
 
   DrawMap(world, hSeed, mSeed, sSeed, tSeed, rSeed, numCPUs)
   ExportJSON(world)
@@ -1076,7 +1025,7 @@ func main() {
   falloff := flag.Float64("falloff", 5.0, "falloff rate")
   mFreq := flag.Float64("mFreq", 1.0, "moisture noise frequency")
   water := flag.Float64("water", 50, "water")
-  saturate := flag.Float64("saturate", 50, "water saturation level") 
+  saturate := flag.Float64("saturate", 10, "water saturation level") 
   sFreq := flag.Float64("sFreq", 20, "soil depth noise frequency")
   tFreq := flag.Float64("tFreq", 200, "tree noise frequency")
   pFreq := flag.Float64("pFreq", 200, "plant noise frequency")

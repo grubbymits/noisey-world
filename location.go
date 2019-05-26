@@ -162,6 +162,12 @@ type Location struct {
   riverBank uint
 }
 
+type ByHeight []Location
+
+func (a ByHeight) Len() int           { return len(a) }
+func (a ByHeight) Less(i, j int) bool { return a[i].height > a[j].height }
+func (a ByHeight) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+
 func (l *Location) addSuccessor(other *Location) {
   l.succs[l.numSuccs] = other
   l.numSuccs++
