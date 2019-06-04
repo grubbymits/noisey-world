@@ -60,6 +60,32 @@ var ROCK_DENSITY = [BIOMES]int {
   1,  // FOREST
 }
 
+const (
+  NORTH = iota
+  NORTH_EAST
+  EAST
+  SOUTH_EAST
+  SOUTH
+  SOUTH_WEST
+  WEST
+  NORTH_WEST
+  MAX_DIR
+)
+
+var OPPOSITE_DIR = [8]int {
+  SOUTH,
+  SOUTH_WEST,
+  WEST,
+  NORTH_WEST,
+  NORTH,
+  NORTH_EAST,
+  EAST,
+  SOUTH_EAST,
+}
+
+var DIR_DELTA_X = [8] int {  0,  1,  1, 1, 0, -1, -1, -1 }
+var DIR_DELTA_Y = [8] int { -1, -1,  0, 1, 1,  1,  0, -1 }
+
 const WATER_LEVEL = -0.35
 const BEACH_LEVEL = WATER_LEVEL + 0.05
 const LOWLANDS = BEACH_LEVEL + 0.3
@@ -77,6 +103,7 @@ type World struct {
   locations []Location
   shoreline []*Location
   regions []Location
+  clouds []*Cloud
   hFreq, mFreq, sFreq, tFreq, pFreq, rFreq, water float64
 }
 
@@ -88,6 +115,7 @@ func CreateWorld(width, height int, hFreq, mFreq, sFreq, tFreq, pFreq, rFreq,
   w.locations = make([]Location, width * height)
   w.regions = make([]Location, width * height / REGION_AREA)
   w.shoreline = make([]*Location, 0, 50)
+  w.clouds = make([]*Cloud, 0, width)
   w.hFreq = hFreq
   w.mFreq = mFreq
   w.sFreq = sFreq
@@ -188,6 +216,20 @@ func (w World) SetBiome(x, y int, b uint8) {
   w.Location(x, y).biome = b
 }
 
+func (w World) getDirectedLocation(loc *Location, dir uint32) *Location {
+  x := loc.x + DIR_DELTA_X[dir]
+  y := loc.y + DIR_DELTA_Y[dir]
+  if x >= 0 && x < w.width && y >= 0 && y < w.height {
+    return w.Location(x, y)
+  }
+  return nil
+}
+
+func (w World) addCloud(parent *Cloud, dir uint32) {
+  loc := w.getDirectedLocation(parent.loc, dir)
+  w.clouds = append(w.clouds, CreateCloud(parent.moisture / 2, dir, loc, &w))
+}
+
 func (w World) isRiverValid(centre *Location) bool {
   if centre.biome == OCEAN {
     return false
@@ -238,25 +280,26 @@ func (w World) isRiverValid(centre *Location) bool {
 }
 
 func (w World) AddWater(loc *Location, saturate float64) {
-  if loc.water > saturate && loc.biome != OCEAN {
-    fmt.Println("Adding river tile")
-    loc.isRiver = true
-    west := w.Location(loc.x - 1, loc.y)
-    east := w.Location(loc.x + 1, loc.y)
-    if west.terrace > loc.terrace {
-      loc.addFeature(RIGHT_WATER_SHADOW_FEATURE)
-    }
-    if east.terrace > loc.terrace {
-      loc.addFeature(LEFT_WATER_SHADOW_FEATURE)
-    }
-    // Square up the water so that a body of water is a minimum of 3x3 tiles.
-    // This allows for a puddle of water to be surrounded in suitable tiles.
-    if loc.x > 1 && loc.y > 1 && loc.x + 1 < w.width && loc.y + 1 < w.height {
-      for x := -1; x < 2; x++ {
-        for y := -1; y < 2; y++ {
-          adjLoc := w.Location(loc.x + x, loc.y + y)
-          adjLoc.isRiver = true
-        }
+  if loc.isRiver || loc.biome == OCEAN || loc.moisture < saturate {
+    return
+  }
+  fmt.Println("Adding river tile")
+  loc.isRiver = true
+  west := w.Location(loc.x - 1, loc.y)
+  east := w.Location(loc.x + 1, loc.y)
+  if west.terrace > loc.terrace {
+    loc.addFeature(RIGHT_WATER_SHADOW_FEATURE)
+  }
+  if east.terrace > loc.terrace {
+    loc.addFeature(LEFT_WATER_SHADOW_FEATURE)
+  }
+  // Square up the water so that a body of water is a minimum of 3x3 tiles.
+  // This allows for a puddle of water to be surrounded in suitable tiles.
+  if loc.x > 1 && loc.y > 1 && loc.x + 1 < w.width && loc.y + 1 < w.height {
+    for x := -1; x < 2; x++ {
+      for y := -1; y < 2; y++ {
+        adjLoc := w.Location(loc.x + x, loc.y + y)
+        adjLoc.isRiver = true
       }
     }
   }
@@ -269,6 +312,9 @@ func (w World) AddRivers(saturate float64) {
 
   for n := 0; n < len(queue); n++ {
     loc := queue[n]
+    if loc.biome == OCEAN {
+      break
+    }
 
     minHeight := loc.height
     var lowest *Location
@@ -289,9 +335,13 @@ func (w World) AddRivers(saturate float64) {
 
     from := w.Location(loc.x, loc.y)
     to := w.Location(lowest.x, lowest.y)
-    from.water += from.moisture
-    to.water += from.water
-    w.AddWater(to, saturate)
+    to.moisture += from.moisture
+  }
+  for y := 0; y < w.height; y++ {
+    for x := 0; x < w.width; x++ {
+      loc := w.Location(x, y)
+      w.AddWater(loc, saturate)
+    }
   }
 }
 
@@ -517,69 +567,79 @@ func (w World) AnalyseRegions(xBegin, xEnd int, c chan int) {
   c <- 1
 }
 
-func (w World) CalcGradient() {
-  width := w.width
+func (w World) Smooth() {
   height := w.height
+  width := w.width
 
   for y := 0; y < height; y++ {
     for x := 0; x < width; x++ {
+      centre := w.Location(x, y)
 
-      centreLoc := w.Location(x, y)
-      //hasPredecessor := false
-      //hasSuccessor := false
+      if centre.biome == OCEAN {
+        continue
+      }
+      hasSuccessor := false
+      heightDiff := 0.0
+      succ := centre
 
       if y - 1 >= 0 {
         north := w.Location(x, y - 1)
-        if north.height <= centreLoc.height {
-          centreLoc.addSuccessor(north)
-          //hasSuccessor = true
-          if north.terrace < centreLoc.terrace {
-            centreLoc.addFeature(HORIZONTAL_SHADOW_FEATURE)
+        if north.height < centre.height {
+          centre.addSuccessor(north)
+          hasSuccessor = true
+          if north.terrace < centre.terrace {
+            centre.addFeature(HORIZONTAL_SHADOW_FEATURE)
           }
-        } else if north.height >= centreLoc.height {
-          //centreLoc.addPredecessor(north)
-          //hasPredecessor = true
-          if north.terrace > centreLoc.terrace {
-            centreLoc.addFeature(HORIZONTAL_SHADOW_FEATURE)
+        } else {
+          if north.height - centre.height < heightDiff {
+            heightDiff = north.height - centre.height
+            succ = north
+          }
+          if north.terrace > centre.terrace {
+            centre.addFeature(HORIZONTAL_SHADOW_FEATURE)
           }
         }
       }
 
       if y + 1 < height {
         south := w.Location(x, y + 1)
-        if south.height <= centreLoc.height {
-          centreLoc.addSuccessor(south)
-          //hasSuccessor = true
-        } else if south.height >= centreLoc.height {
-          //centreLoc.addPredecessor(south)
-          //hasPredecessor = true
+        if south.height < centre.height {
+          centre.addSuccessor(south)
+          hasSuccessor = true
+        } else if south.height - centre.height < heightDiff {
+          heightDiff = south.height - centre.height
+          succ = south
         }
       }
 
       if x + 1 < width {
         east := w.Location(x + 1, y)
-        if east.height <= centreLoc.height {
-          centreLoc.addSuccessor(east)
-          //hasSuccessor = true
-        } else if east.height >= centreLoc.height {
-          //centreLoc.addPredecessor(east)
-          //hasPredecessor = true
-          if east.terrace > centreLoc.terrace {
-            centreLoc.addFeature(LEFT_SHADOW_FEATURE)
+        if east.height < centre.height {
+          centre.addSuccessor(east)
+          hasSuccessor = true
+        } else {
+          if east.height - centre.height < heightDiff {
+            heightDiff = east.height - centre.height
+            succ = east
+          }
+          if east.terrace > centre.terrace {
+            centre.addFeature(LEFT_SHADOW_FEATURE)
           }
         }
       }
 
       if x - 1 >= 0 {
         west := w.Location(x - 1, y)
-        if west.height <= centreLoc.height {
-          centreLoc.addSuccessor(west)
-          //hasSuccessor = true
-        } else if west.height >= centreLoc.height {
-          //centreLoc.addPredecessor(west)
-          //hasPredecessor = true
-          if west.terrace > centreLoc.terrace {
-            centreLoc.addFeature(RIGHT_SHADOW_FEATURE)
+        if west.height < centre.height {
+          centre.addSuccessor(west)
+          hasSuccessor = true
+        } else {
+          if west.height - centre.height < heightDiff {
+            heightDiff = west.height - centre.height
+            succ = west
+          }
+          if west.terrace > centre.terrace {
+            centre.addFeature(RIGHT_SHADOW_FEATURE)
           }
         }
       }
@@ -588,10 +648,10 @@ func (w World) CalcGradient() {
         topRight := w.Location(x + 1, y - 1)
         top := w.Location(x, y - 1)
         right := w.Location(x + 1, y)
-        if topRight.terrace > centreLoc.terrace &&
-           top.terrace == centreLoc.terrace &&
-           right.terrace == centreLoc.terrace {
-          centreLoc.addFeature(BOTTOM_LEFT_SHADOW_FEATURE)
+        if topRight.terrace > centre.terrace &&
+           top.terrace == centre.terrace &&
+           right.terrace == centre.terrace {
+          centre.addFeature(BOTTOM_LEFT_SHADOW_FEATURE)
         }
       }
 
@@ -599,18 +659,16 @@ func (w World) CalcGradient() {
         topLeft := w.Location(x - 1, y - 1)
         top := w.Location(x, y - 1)
         left := w.Location(x - 1, y)
-        if topLeft.terrace > centreLoc.terrace &&
-           top.terrace == centreLoc.terrace &&
-           left.terrace == centreLoc.terrace {
-          centreLoc.addFeature(BOTTOM_RIGHT_SHADOW_FEATURE)
+        if topLeft.terrace > centre.terrace &&
+           top.terrace == centre.terrace &&
+           left.terrace == centre.terrace {
+          centre.addFeature(BOTTOM_RIGHT_SHADOW_FEATURE)
         }
       }
 
-      // Calculate the total gradient of the successors, which will be used to
-      // determine the ratio of water flow. 
-      for i := 0; i < centreLoc.numSuccs; i++ {
-        succ := centreLoc.succs[i]
-        centreLoc.totalGradient += math.Abs(centreLoc.height) - math.Abs(succ.height)
+      if !hasSuccessor {
+        centre.height += heightDiff
+        centre.addSuccessor(succ)
       }
     }
   }
@@ -704,6 +762,9 @@ func (world World) CalcSoilDepth(xBegin, xEnd int,
     }
   }
   c <- 1
+}
+
+func (w World) AddMoisture() {
 }
 
 func (w World) CalcMoisture(xBegin, xEnd int,
@@ -926,22 +987,25 @@ func GenerateMap(hFreq, heightBaseline, edgeUp, edgeDown, falloff,
     go world.CalcPlants(xBegin, xEnd, &pNoise, c)
     go world.CalcRock(xBegin, xEnd, &rNoise, c)
   }
-
   for i := 0; i < numThreads; i++ {
     <-c
   }
 
-  world.CalcGradient();
-
-  c = make(chan int, numCPUs)
-  for i := 0; i < numCPUs; i++ {
-    go world.CalcBiome(i * width / numCPUs,
-                       (i + 1) * width / numCPUs, c)
+  // We've calculate the heights, so now do the second pass and add shadow
+  // features.
+  // Calculate the biome once all attributes have been calculated.
+  numThreads = 1 * numCPUs
+  c = make(chan int, numThreads)
+  for i := 0; i < numThreads; i++ {
+    xBegin := i * width / numCPUs
+    xEnd := (i + 1) * width / numCPUs
+    go world.CalcBiome(xBegin, xEnd, c)
   }
-  for i := 0; i < numCPUs; i++ {
+  for i := 0; i < numThreads; i++ {
     <-c
   }
 
+  world.Smooth()
   world.AddRivers(saturate)
 
   numThreads = numCPUs * 2
@@ -976,34 +1040,36 @@ func GenerateMap(hFreq, heightBaseline, edgeUp, edgeDown, falloff,
   }
 
   fmt.Println("size of shoreline: ", len(world.shoreline))
-  lowest := world.shoreline[0]
-  for i := 1; i < len(world.shoreline); i++ {
-    beach := world.shoreline[i]
-    if beach.height < lowest.height {
-      lowest = beach
+  if len(world.shoreline) != 0 {
+    lowest := world.shoreline[0]
+    for i := 1; i < len(world.shoreline); i++ {
+      beach := world.shoreline[i]
+      if beach.height < lowest.height {
+        lowest = beach
+      }
     }
   }
 
-  numThreads = 4
-  highs := make([]*Location, 0, numThreads)
-  c = make(chan int, numThreads)
-  for i := 0; i < numThreads; i++ {
-    xBegin := i * width / numThreads
-    xEnd := (i + 1) * width / numThreads
-    highs = append(highs, nil)
-    go world.FindHighest(xBegin, xEnd, &(highs[i]), c)
-  }
-  for i := 0; i < numThreads; i++ {
-    <-c
-  }
-  highest := highs[0]
-  for i := 1; i < len(highs); i++ {
-    if highs[i].height > highest.height {
-      highest = highs[i]
-    }
-  }
+  //numThreads = 4
+  //highs := make([]*Location, 0, numThreads)
+  //c = make(chan int, numThreads)
+  //for i := 0; i < numThreads; i++ {
+    //xBegin := i * width / numThreads
+    //xEnd := (i + 1) * width / numThreads
+    //highs = append(highs, nil)
+    //go world.FindHighest(xBegin, xEnd, &(highs[i]), c)
+  //}
+  //for i := 0; i < numThreads; i++ {
+    //<-c
+  //}
+  //highest := highs[0]
+  //for i := 1; i < len(highs); i++ {
+    //if highs[i].height > highest.height {
+      //highest = highs[i]
+    //}
+  //}
 
-  world.GeneratePath(lowest, highest)
+  //world.GeneratePath(lowest, highest)
 
   fmt.Println("Duration: ", time.Now().Sub(start));
 

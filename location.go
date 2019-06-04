@@ -148,7 +148,7 @@ func biome(h, m, s float64) uint8 {
 }
 
 type Location struct {
-  height, moisture, soilDepth, tree, rock, plant, water float64
+  height, moisture, soilDepth, tree, rock, plant float64
   preds, succs [4]*Location
   numPreds, numSuccs int
   totalGradient float64
