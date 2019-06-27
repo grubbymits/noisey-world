@@ -105,10 +105,10 @@ type World struct {
   shoreline []*Location
   regions []Location
   clouds []*Cloud
-  hFreq, sFreq, tFreq, pFreq, rFreq, water float64
+  hFreq, tFreq, pFreq, rFreq, water float64
 }
 
-func CreateWorld(width, height int, windDir uint, hFreq, sFreq, tFreq, pFreq, rFreq,
+func CreateWorld(width, height int, windDir uint, hFreq, tFreq, pFreq, rFreq,
                  water float64) *World {
   w := new(World)
   w.width = width;
@@ -117,11 +117,9 @@ func CreateWorld(width, height int, windDir uint, hFreq, sFreq, tFreq, pFreq, rF
   w.regions = make([]Location, width * height / REGION_AREA)
   w.shoreline = make([]*Location, 0, 50)
   w.hFreq = hFreq
-  w.sFreq = sFreq
   w.tFreq = tFreq
   w.pFreq = pFreq
   w.rFreq = rFreq
-  w.water = water
 
   for y := 0; y < height; y++ {
     for x := 0; x < width; x++ {
@@ -158,15 +156,15 @@ func CreateWorld(width, height int, windDir uint, hFreq, sFreq, tFreq, pFreq, rF
     numClouds = height
     sx = width - 1
     sy = 0
-    ex = 0
-    ey = 0
+    ex = width - 1
+    ey = height - 1
   }
 
   w.clouds = make([]*Cloud, numClouds)
   for x := sx; x <= ex; x++ {
     for y := sy; y <= ey; y++ {
       loc := w.Location(x, y)
-      w.clouds[x] = CreateCloud(75, windDir, loc, w);
+      w.clouds[x] = CreateCloud(water, windDir, loc, w);
     }
   }
   return w
@@ -198,10 +196,6 @@ func (w World) Height(x, y int) float64 {
   return w.locations[y * w.width + x].height
 }
 
-func (w World) SoilDepth(x, y int) float64 {
-  return w.locations[y * w.width + x].soilDepth
-}
-
 func (w World) Tree(x, y int) float64 {
   return w.locations[y * w.width + x].tree
 }
@@ -224,10 +218,6 @@ func (w World) Biome(x, y int) uint8 {
 
 func (w World) SetMoisture(x, y int, m float64) {
   w.locations[y * w.width + x].moisture = m
-}
-
-func (w World) SetSoilDepth(x, y int, s float64) {
-  w.locations[y * w.width + x].soilDepth = s
 }
 
 func (w World) SetTree(x, y int, t float64) {
@@ -376,9 +366,7 @@ func (w World) AddRivers(saturate float64) {
 
     from := w.Location(loc.x, loc.y)
     to := w.Location(lowest.x, lowest.y)
-    if to.terrace < from.terrace {
-      to.moisture += from.moisture * 1.5
-    } else if to.height < from.height {
+    if to.height < from.height {
       to.moisture += from.moisture * 1.1
     } else {
       to.moisture += from.moisture
@@ -744,35 +732,12 @@ func (world World) CalcHeight(xBegin, xEnd int,
         world.SetTerrace(x, y, 3)
       } else if h > LOWLANDS {
         world.SetTerrace(x, y, 2)
-      } else if h > BEACH {
+      } else if h > BEACH_LEVEL {
         world.SetTerrace(x, y, 1)
       } else {
         world.SetTerrace(x, y, 0)
       }
       world.SetHeight(x, y, h)
-    }
-  }
-  c <- 1
-}
-
-func (world World) CalcSoilDepth(xBegin, xEnd int,
-                                 noise *opensimplex.Noise, c chan int) {
-  freq := world.sFreq
-  width := world.width
-  height := world.height
-	n := *noise
-
-  for y := 0; y < height; y++ {
-    for x := xBegin; x < xEnd; x++ {
-      xFloat := float64(x) / float64(width)
-      yFloat := float64(y) / float64(height)
-      s := 1 * n.Eval2(freq * xFloat, freq * yFloat) +
-             0.50 * n.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
-             0.25 * n.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
-             0.125 * n.Eval2(8 * freq * xFloat, 8 * freq * yFloat)
-
-      s -= world.Height(x, y)
-      world.SetSoilDepth(x, y, s)
     }
   }
   c <- 1
@@ -794,8 +759,7 @@ func (w World) CalcBiome(xBegin, xEnd int, c chan int) {
   height := w.height
 
   for x := xBegin; x < xEnd; x++ {
-    w.SetBiome(x, 0, biome(w.Height(x, 0), w.Moisture(x, 0),
-               w.SoilDepth(x, 0)))
+    w.SetBiome(x, 0, biome(w.Height(x, 0), w.Moisture(x, 0)))
   }
 
   for y := 1; y < height; y++ {
@@ -803,8 +767,7 @@ func (w World) CalcBiome(xBegin, xEnd int, c chan int) {
       if w.Terrace(x, y - 1) > w.Terrace(x, y) {
         w.Location(x, y - 1).isWall = true;
       }
-      w.SetBiome(x, y, biome(w.Height(x, y), w.Moisture(x, y),
-                 w.SoilDepth(x, y)))
+      w.SetBiome(x, y, biome(w.Height(x, y), w.Moisture(x, y)))
     }
   }
   c <-1 
@@ -947,36 +910,32 @@ func (w *World) GeneratePath(start, goal *Location) bool {
 
 func GenerateMap(hFreq, heightBaseline, edgeUp, edgeDown, falloff,
                  water, saturate,
-                 sFreq, tFreq, pFreq, rFreq float64,
+                 tFreq, pFreq, rFreq float64,
                  width, height int, windDir uint, numCPUs int) {
   rand.Seed(time.Now().UTC().UnixNano())
   hSeed := rand.Int63()
-  sSeed := rand.Int63()
   tSeed := rand.Int63()
   pSeed := rand.Int63()
   rSeed := rand.Int63()
   fmt.Println("height seed:", hSeed)
-  fmt.Println("soil seed:", sSeed)
   fmt.Println("tree seed:", tSeed)
   fmt.Println("plant seed:", pSeed)
   fmt.Println("rock seed:", rSeed)
   hNoise := opensimplex.New(hSeed)
-  sNoise := opensimplex.New(sSeed)
   tNoise := opensimplex.New(tSeed)
   pNoise := opensimplex.New(pSeed)
   rNoise := opensimplex.New(rSeed)
 
-  world := CreateWorld(width, height, windDir, hFreq, sFreq, tFreq, pFreq, rFreq, water)
+  world := CreateWorld(width, height, windDir, hFreq, tFreq, pFreq, rFreq, water)
   start := time.Now()
 
-  numThreads := 5 * numCPUs
+  numThreads := 4 * numCPUs
   c := make(chan int, numThreads)
   for i := 0; i < numCPUs; i++ {
     xBegin := i * width / numCPUs
     xEnd := (i + 1) * width / numCPUs
     go world.CalcHeight(xBegin, xEnd, heightBaseline, edgeUp, edgeDown,
                         falloff, &hNoise, c)
-    go world.CalcSoilDepth(xBegin, xEnd,  &sNoise, c)
     go world.CalcTrees(xBegin, xEnd, &tNoise, c)
     go world.CalcPlants(xBegin, xEnd, &pNoise, c)
     go world.CalcRock(xBegin, xEnd, &rNoise, c)
@@ -1069,7 +1028,7 @@ func GenerateMap(hFreq, heightBaseline, edgeUp, edgeDown, falloff,
 
   fmt.Println("Duration: ", time.Now().Sub(start));
 
-  DrawMap(world, hSeed, sSeed, tSeed, rSeed, numCPUs)
+  DrawMap(world, hSeed, tSeed, rSeed, numCPUs)
   ExportJSON(world)
 }
 
@@ -1089,7 +1048,6 @@ func main() {
   water := flag.Float64("water", 50, "water")
   saturate := flag.Float64("saturate", 30, "water saturation level")
   direction := flag.String("wind", "n", "wind direction")
-  sFreq := flag.Float64("sFreq", 20, "soil depth noise frequency")
   tFreq := flag.Float64("tFreq", 200, "tree noise frequency")
   pFreq := flag.Float64("pFreq", 200, "plant noise frequency")
   rFreq := flag.Float64("rFreq", 200, "rock noise frequency")
@@ -1125,6 +1083,6 @@ func main() {
   fmt.Println(*width, ",", *height, ",", *threads)
   GenerateMap(*hFreq, *bias, *edgeUp, *edgeDown, *falloff,
               *water, *saturate,
-              *sFreq, *tFreq, *pFreq, *rFreq,
+              *tFreq, *pFreq, *rFreq,
               *width, *height, windDir, *threads)
 }

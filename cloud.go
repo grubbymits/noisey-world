@@ -42,14 +42,7 @@ func (c *Cloud) update() bool {
 
   multiplier := nextLoc.height / c.loc.height
   total := RAIN * multiplier
-
-  // Treat terraces as obsticles that will cause the cloud to split into
-  // multiple clouds, with a maximum of two new clouds, each taking some of the
-  // moisture. Each new cloud will travel in a different direction.
   if nextLoc.terrace > c.loc.terrace {
-    c.world.addCloud(c, (c.direction + 1) % MAX_DIR)
-    c.world.addCloud(c, (c.direction - 1) % MAX_DIR)
-    c.moisture /= 3
     multiplier *= 2
   }
 
@@ -61,6 +54,16 @@ func (c *Cloud) update() bool {
     nextLoc.moisture += total
     c.moisture -= total
   }
+
+  // Treat terraces as obsticles that will cause the cloud to split into
+  // multiple clouds, with a maximum of two new clouds, each taking some of the
+  // moisture. Each new cloud will travel in a different direction.
+  if nextLoc.terrace > c.loc.terrace {
+    c.world.addCloud(c, (c.direction + 1) % MAX_DIR)
+    c.world.addCloud(c, (c.direction - 1) % MAX_DIR)
+    c.moisture /= 3
+  }
+
   c.loc = nextLoc
   return false
 }

@@ -316,7 +316,7 @@ func (render *MapRenderer) ParallelDraw(w *World, xBegin, xEnd int, c chan int) 
   c <- 1
 }
 
-func DrawMap(w *World, hSeed, sSeed, fSeed, rSeed int64, numCPUs int) {
+func DrawMap(w *World, hSeed, fSeed, rSeed int64, numCPUs int) {
   // First, create an overworld image that represents each tile with a single
   // pixel.
   overworld := image.NewRGBA(image.Rect(0, 0, w.width, w.height))
@@ -347,7 +347,6 @@ func DrawMap(w *World, hSeed, sSeed, fSeed, rSeed int64, numCPUs int) {
   }
 
   filename := "h" + strconv.FormatInt(hSeed, 16) + "-" +
-              "s" + strconv.FormatInt(sSeed, 16) + "-" +
               "f" + strconv.FormatInt(fSeed, 16) + "-" +
               "r" + strconv.FormatInt(rSeed, 16) + ".png"
   imgFile, err := os.Create(filename)

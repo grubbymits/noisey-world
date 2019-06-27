@@ -45,7 +45,7 @@ const (
   BIOMES
 )
 
-func biome(h, m, s float64) uint8 {
+func biome(h, m float64) uint8 {
   // Height, Moisture and Soil Depth
 
   // - bare rock
@@ -70,73 +70,31 @@ func biome(h, m, s float64) uint8 {
     return BEACH
   }
 
-  // No soil
-  if s < NO_SOIL {
-    if m < DRY {
+  if h > HIGHLANDS {
+    if m > WET {
+      return MOORLAND
+    } else if m > MOIST {
+      return MOIST_ROCK
+    } else {
       return DRY_ROCK
     }
-    return MOIST_ROCK
-  }
-
-  if h > HIGHLANDS {
-    if s > THICK_SOIL {
-      if m > WET {
-        return MOORLAND
-      } else if m > MOIST {
-        return SHRUBLAND
-      } else {
-        return GRASSLAND
-      }
-    } else if s > SHALLOW_SOIL {
-      if m > WET {
-        return WOODLAND
-      } else if m > MOIST {
-        return SHRUBLAND
-      } else {
-        return GRASSLAND
-      }
-    } else {
-      return GRASSLAND
-    }
   } else if h > MIDLANDS {
-    if s > THICK_SOIL {
-      if m > WET {
-        return FOREST
-      } else if m > MOIST {
-        return WOODLAND
-      } else {
-        return SHRUBLAND
-      }
-    } else if s > SHALLOW_SOIL {
-      if m > WET {
-        return WOODLAND
-      } else if m > MOIST {
-        return SHRUBLAND
-      } else {
-        return GRASSLAND
-      }
-    } else if m > WET {
-      return SHRUBLAND
+    if m > WET {
+      return FOREST
+    } else if m > MOIST {
+      return WOODLAND
     } else {
-      return GRASSLAND
+      return SHRUBLAND
     }
-  } else if s > THICK_SOIL {  // lowlands
+  } else if h > LOWLANDS {
     if m > WET {
       return FENLAND
     } else if m > MOIST {
-      return FOREST
-    } else {
-      return WOODLAND
-    }
-  } else if s > SHALLOW_SOIL {
-    if m > WET {
-      return WOODLAND
-    } else if m > MOIST {
       return SHRUBLAND
     } else {
-      return HEATHLAND
+      return GRASSLAND
     }
-  } else {
+  } else if h > BEACH_LEVEL {
     if m > WET {
       return SHRUBLAND
     } else if m > MOIST {
@@ -145,10 +103,11 @@ func biome(h, m, s float64) uint8 {
       return HEATHLAND
     }
   }
+  return BEACH
 }
 
 type Location struct {
-  height, moisture, soilDepth, tree, rock, plant float64
+  height, moisture, tree, rock, plant float64
   neighbours [4]*Location
   numNeighbours int
   totalGradient float64
