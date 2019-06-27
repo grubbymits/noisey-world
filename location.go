@@ -149,7 +149,7 @@ func biome(h, m, s float64) uint8 {
 
 type Location struct {
   height, moisture, soilDepth, tree, rock, plant float64
-  preds, succs [4]*Location
+  succs [4]*Location
   numPreds, numSuccs int
   totalGradient float64
   discovered, weight int
@@ -171,11 +171,6 @@ func (a ByHeight) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (l *Location) addSuccessor(other *Location) {
   l.succs[l.numSuccs] = other
   l.numSuccs++
-}
-
-func (l *Location) addPredecessor(other *Location) {
-  l.preds[l.numPreds] = other
-  l.numPreds = l.numPreds + 1
 }
 
 func (l *Location) addFeature(feat uint) {

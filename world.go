@@ -92,9 +92,9 @@ const LOWLANDS = BEACH_LEVEL + 0.3
 const MIDLANDS = LOWLANDS + 0.3
 const HIGHLANDS = MIDLANDS + 0.3
 const NO_SOIL = -1.5
-const DRY = -0.5
-const MOIST = 0
-const WET = 0.3
+const DRY = 0
+const MOIST = 0.4
+const WET = 0.9
 const THICK_SOIL = -0.2
 const SHALLOW_SOIL = -0.7
 
@@ -115,7 +115,7 @@ func CreateWorld(width, height int, hFreq, mFreq, sFreq, tFreq, pFreq, rFreq,
   w.locations = make([]Location, width * height)
   w.regions = make([]Location, width * height / REGION_AREA)
   w.shoreline = make([]*Location, 0, 50)
-  w.clouds = make([]*Cloud, 0, width)
+  w.clouds = make([]*Cloud, width)
   w.hFreq = hFreq
   w.mFreq = mFreq
   w.sFreq = sFreq
@@ -130,6 +130,11 @@ func CreateWorld(width, height int, hFreq, mFreq, sFreq, tFreq, pFreq, rFreq,
       loc.x = x
       loc.y = y
     }
+  }
+
+  for x := 0; x < width; x++ {
+    loc := w.Location(x, height - 1)
+    w.clouds[x] = CreateCloud(75, NORTH, loc, w);
   }
   return w
 }
@@ -220,14 +225,15 @@ func (w World) getDirectedLocation(loc *Location, dir uint32) *Location {
   x := loc.x + DIR_DELTA_X[dir]
   y := loc.y + DIR_DELTA_Y[dir]
   if x >= 0 && x < w.width && y >= 0 && y < w.height {
-    return w.Location(x, y)
+    res := w.Location(x, y)
+    return res
   }
   return nil
 }
 
 func (w World) addCloud(parent *Cloud, dir uint32) {
   loc := w.getDirectedLocation(parent.loc, dir)
-  w.clouds = append(w.clouds, CreateCloud(parent.moisture / 2, dir, loc, &w))
+  w.clouds = append(w.clouds, CreateCloud(parent.moisture / 3, dir, loc, &w))
 }
 
 func (w World) isRiverValid(centre *Location) bool {
@@ -279,11 +285,7 @@ func (w World) isRiverValid(centre *Location) bool {
   return true
 }
 
-func (w World) AddWater(loc *Location, saturate float64) {
-  if loc.isRiver || loc.biome == OCEAN || loc.moisture < saturate {
-    return
-  }
-  fmt.Println("Adding river tile")
+func (w World) AddWater(loc *Location) {
   loc.isRiver = true
   west := w.Location(loc.x - 1, loc.y)
   east := w.Location(loc.x + 1, loc.y)
@@ -337,12 +339,18 @@ func (w World) AddRivers(saturate float64) {
     to := w.Location(lowest.x, lowest.y)
     to.moisture += from.moisture
   }
+  count := 0
   for y := 0; y < w.height; y++ {
     for x := 0; x < w.width; x++ {
       loc := w.Location(x, y)
-      w.AddWater(loc, saturate)
+      if loc.isRiver || loc.biome == OCEAN || loc.moisture < saturate {
+        continue
+      }
+      w.AddWater(loc)
+      count++
     }
   }
+  fmt.Println("Added", count, "river tiles")
 }
 
 // Look around each tile, recording the number of tiles which differ from its
@@ -765,6 +773,15 @@ func (world World) CalcSoilDepth(xBegin, xEnd int,
 }
 
 func (w World) AddMoisture() {
+  count := 0
+  for len(w.clouds) != 0 {
+    cloud := w.clouds[0]
+    if cloud.update() {
+      w.clouds = w.clouds[1:]
+    }
+    count++
+  }
+  fmt.Println("updated", count, "clouds")
 }
 
 func (w World) CalcMoisture(xBegin, xEnd int,
@@ -774,7 +791,7 @@ func (w World) CalcMoisture(xBegin, xEnd int,
   width := w.width
   height := w.height
   n := *noise
-
+  
   for y := 0; y < height; y++ {
     for x := xBegin; x < xEnd; x++ {
       xFloat := float64(x) / float64(width)
@@ -963,7 +980,7 @@ func GenerateMap(hFreq, heightBaseline, edgeUp, edgeDown, falloff,
   fmt.Println("plant seed:", pSeed)
   fmt.Println("rock seed:", rSeed)
   hNoise := opensimplex.New(hSeed)
-  mNoise := opensimplex.New(mSeed)
+  //mNoise := opensimplex.New(mSeed)
   sNoise := opensimplex.New(sSeed)
   tNoise := opensimplex.New(tSeed)
   pNoise := opensimplex.New(pSeed)
@@ -974,14 +991,14 @@ func GenerateMap(hFreq, heightBaseline, edgeUp, edgeDown, falloff,
 
   start := time.Now()
 
-  numThreads := 6 * numCPUs
+  numThreads := 5 * numCPUs
   c := make(chan int, numThreads)
   for i := 0; i < numCPUs; i++ {
     xBegin := i * width / numCPUs
     xEnd := (i + 1) * width / numCPUs
     go world.CalcHeight(xBegin, xEnd, heightBaseline, edgeUp, edgeDown,
                         falloff, &hNoise, c)
-    go world.CalcMoisture(xBegin, xEnd, &mNoise, c)
+    //go world.CalcMoisture(xBegin, xEnd, &mNoise, c)
     go world.CalcSoilDepth(xBegin, xEnd,  &sNoise, c)
     go world.CalcTrees(xBegin, xEnd, &tNoise, c)
     go world.CalcPlants(xBegin, xEnd, &pNoise, c)
@@ -990,6 +1007,8 @@ func GenerateMap(hFreq, heightBaseline, edgeUp, edgeDown, falloff,
   for i := 0; i < numThreads; i++ {
     <-c
   }
+
+  world.AddMoisture()
 
   // We've calculate the heights, so now do the second pass and add shadow
   // features.
