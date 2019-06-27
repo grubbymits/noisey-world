@@ -2,14 +2,14 @@ package main
 
 type Cloud struct {
   moisture float64
-  direction uint32
+  direction uint
   loc *Location
   world *World
 }
 
 const RAIN = 0.5
 
-func CreateCloud(moisture float64, direction uint32, loc *Location,
+func CreateCloud(moisture float64, direction uint, loc *Location,
                  world *World) *Cloud {
   c := new(Cloud)
   c.moisture = moisture
@@ -35,7 +35,7 @@ func (c *Cloud) update() bool {
   }
 
   // Don't start 'raining' until the cloud gets to land.
-  if nextLoc.height < WATER_LEVEL {
+  if nextLoc.height < RAIN_LEVEL {
     c.loc = nextLoc
     return false
   }
@@ -47,8 +47,8 @@ func (c *Cloud) update() bool {
   // multiple clouds, with a maximum of two new clouds, each taking some of the
   // moisture. Each new cloud will travel in a different direction.
   if nextLoc.terrace > c.loc.terrace {
-    c.world.addCloud(c, (c.direction + 2) % MAX_DIR)
-    c.world.addCloud(c, (c.direction - 2) % MAX_DIR)
+    c.world.addCloud(c, (c.direction + 1) % MAX_DIR)
+    c.world.addCloud(c, (c.direction - 1) % MAX_DIR)
     c.moisture /= 3
     multiplier *= 2
   }

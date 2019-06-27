@@ -88,6 +88,7 @@ var DIR_DELTA_Y = [8] int { -1, -1,  0, 1, 1,  1,  0, -1 }
 
 const WATER_LEVEL = -0.35
 const BEACH_LEVEL = WATER_LEVEL + 0.05
+const RAIN_LEVEL = BEACH_LEVEL + 0.1
 const LOWLANDS = BEACH_LEVEL + 0.3
 const MIDLANDS = LOWLANDS + 0.3
 const HIGHLANDS = MIDLANDS + 0.3
@@ -104,10 +105,10 @@ type World struct {
   shoreline []*Location
   regions []Location
   clouds []*Cloud
-  hFreq, mFreq, sFreq, tFreq, pFreq, rFreq, water float64
+  hFreq, sFreq, tFreq, pFreq, rFreq, water float64
 }
 
-func CreateWorld(width, height int, hFreq, mFreq, sFreq, tFreq, pFreq, rFreq,
+func CreateWorld(width, height int, windDir uint, hFreq, sFreq, tFreq, pFreq, rFreq,
                  water float64) *World {
   w := new(World)
   w.width = width;
@@ -115,9 +116,7 @@ func CreateWorld(width, height int, hFreq, mFreq, sFreq, tFreq, pFreq, rFreq,
   w.locations = make([]Location, width * height)
   w.regions = make([]Location, width * height / REGION_AREA)
   w.shoreline = make([]*Location, 0, 50)
-  w.clouds = make([]*Cloud, width)
   w.hFreq = hFreq
-  w.mFreq = mFreq
   w.sFreq = sFreq
   w.tFreq = tFreq
   w.pFreq = pFreq
@@ -132,9 +131,43 @@ func CreateWorld(width, height int, hFreq, mFreq, sFreq, tFreq, pFreq, rFreq,
     }
   }
 
-  for x := 0; x < width; x++ {
-    loc := w.Location(x, height - 1)
-    w.clouds[x] = CreateCloud(75, NORTH, loc, w);
+  numClouds := 0
+  sx := 0
+  sy := 0
+  ex := 0
+  ey := 0
+  if windDir == NORTH {
+    numClouds = width
+    sx = 0
+    sy = height - 1
+    ex = width - 1
+    ey = height - 1
+  } else if windDir == SOUTH {
+    numClouds = width
+    sx = 0
+    sy = 0
+    ex = width - 1
+    ey = 0
+  } else if windDir == EAST {
+    numClouds = height
+    sx = 0
+    sy = 0
+    ex = 0
+    ey = height - 1
+  } else if windDir == WEST {
+    numClouds = height
+    sx = width - 1
+    sy = 0
+    ex = 0
+    ey = 0
+  }
+
+  w.clouds = make([]*Cloud, numClouds)
+  for x := sx; x <= ex; x++ {
+    for y := sy; y <= ey; y++ {
+      loc := w.Location(x, y)
+      w.clouds[x] = CreateCloud(75, windDir, loc, w);
+    }
   }
   return w
 }
@@ -221,7 +254,7 @@ func (w World) SetBiome(x, y int, b uint8) {
   w.Location(x, y).biome = b
 }
 
-func (w World) getDirectedLocation(loc *Location, dir uint32) *Location {
+func (w World) getDirectedLocation(loc *Location, dir uint) *Location {
   x := loc.x + DIR_DELTA_X[dir]
   y := loc.y + DIR_DELTA_Y[dir]
   if x >= 0 && x < w.width && y >= 0 && y < w.height {
@@ -231,7 +264,7 @@ func (w World) getDirectedLocation(loc *Location, dir uint32) *Location {
   return nil
 }
 
-func (w World) addCloud(parent *Cloud, dir uint32) {
+func (w World) addCloud(parent *Cloud, dir uint) {
   loc := w.getDirectedLocation(parent.loc, dir)
   w.clouds = append(w.clouds, CreateCloud(parent.moisture / 3, dir, loc, &w))
 }
@@ -301,6 +334,12 @@ func (w World) AddWater(loc *Location) {
     for x := -1; x < 2; x++ {
       for y := -1; y < 2; y++ {
         adjLoc := w.Location(loc.x + x, loc.y + y)
+        if adjLoc.biome == BEACH {
+          adjLoc.biome = OCEAN
+          continue
+        } else if adjLoc.biome == OCEAN {
+          continue
+        }
         adjLoc.isRiver = true
       }
     }
@@ -320,14 +359,14 @@ func (w World) AddRivers(saturate float64) {
 
     minHeight := loc.height
     var lowest *Location
-    for i := 0; i < loc.numSuccs; i++ {
-      succ := loc.succs[i];
-      if !w.isRiverValid(succ) {
+    for i := 0; i < loc.numNeighbours; i++ {
+      neighbour := loc.neighbours[i];
+      if !w.isRiverValid(neighbour) {
         continue
       }
-      if succ.height < minHeight {
-        minHeight = succ.height
-        lowest = succ
+      if neighbour.height < minHeight {
+        minHeight = neighbour.height
+        lowest = neighbour
       }
     }
 
@@ -337,7 +376,13 @@ func (w World) AddRivers(saturate float64) {
 
     from := w.Location(loc.x, loc.y)
     to := w.Location(lowest.x, lowest.y)
-    to.moisture += from.moisture
+    if to.terrace < from.terrace {
+      to.moisture += from.moisture * 1.5
+    } else if to.height < from.height {
+      to.moisture += from.moisture * 1.1
+    } else {
+      to.moisture += from.moisture
+    }
   }
   count := 0
   for y := 0; y < w.height; y++ {
@@ -575,7 +620,7 @@ func (w World) AnalyseRegions(xBegin, xEnd int, c chan int) {
   c <- 1
 }
 
-func (w World) Smooth() {
+func (w World) FindNeighbours() {
   height := w.height
   width := w.width
 
@@ -586,69 +631,35 @@ func (w World) Smooth() {
       if centre.biome == OCEAN {
         continue
       }
-      hasSuccessor := false
-      heightDiff := 0.0
-      succ := centre
 
       if y - 1 >= 0 {
         north := w.Location(x, y - 1)
-        if north.height < centre.height {
-          centre.addSuccessor(north)
-          hasSuccessor = true
-          if north.terrace < centre.terrace {
-            centre.addFeature(HORIZONTAL_SHADOW_FEATURE)
-          }
-        } else {
-          if north.height - centre.height < heightDiff {
-            heightDiff = north.height - centre.height
-            succ = north
-          }
-          if north.terrace > centre.terrace {
-            centre.addFeature(HORIZONTAL_SHADOW_FEATURE)
-          }
+        centre.addNeighbour(north)
+        if north.terrace < centre.terrace {
+          centre.addFeature(HORIZONTAL_SHADOW_FEATURE)
+        } else if north.terrace > centre.terrace {
+          centre.addFeature(HORIZONTAL_SHADOW_FEATURE)
         }
       }
 
       if y + 1 < height {
         south := w.Location(x, y + 1)
-        if south.height < centre.height {
-          centre.addSuccessor(south)
-          hasSuccessor = true
-        } else if south.height - centre.height < heightDiff {
-          heightDiff = south.height - centre.height
-          succ = south
-        }
+        centre.addNeighbour(south)
       }
 
       if x + 1 < width {
         east := w.Location(x + 1, y)
-        if east.height < centre.height {
-          centre.addSuccessor(east)
-          hasSuccessor = true
-        } else {
-          if east.height - centre.height < heightDiff {
-            heightDiff = east.height - centre.height
-            succ = east
-          }
-          if east.terrace > centre.terrace {
-            centre.addFeature(LEFT_SHADOW_FEATURE)
-          }
+        centre.addNeighbour(east)
+        if east.height >= centre.height && east.terrace > centre.terrace {
+          centre.addFeature(LEFT_SHADOW_FEATURE)
         }
       }
 
       if x - 1 >= 0 {
         west := w.Location(x - 1, y)
-        if west.height < centre.height {
-          centre.addSuccessor(west)
-          hasSuccessor = true
-        } else {
-          if west.height - centre.height < heightDiff {
-            heightDiff = west.height - centre.height
-            succ = west
-          }
-          if west.terrace > centre.terrace {
-            centre.addFeature(RIGHT_SHADOW_FEATURE)
-          }
+        centre.addNeighbour(west)
+        if west.terrace > centre.terrace {
+          centre.addFeature(RIGHT_SHADOW_FEATURE)
         }
       }
 
@@ -672,11 +683,6 @@ func (w World) Smooth() {
            left.terrace == centre.terrace {
           centre.addFeature(BOTTOM_RIGHT_SHADOW_FEATURE)
         }
-      }
-
-      if !hasSuccessor {
-        centre.height += heightDiff
-        centre.addSuccessor(succ)
       }
     }
   }
@@ -782,29 +788,6 @@ func (w World) AddMoisture() {
     count++
   }
   fmt.Println("updated", count, "clouds")
-}
-
-func (w World) CalcMoisture(xBegin, xEnd int,
-                            noise *opensimplex.Noise,
-                            c chan int) {
-  freq := w.mFreq
-  width := w.width
-  height := w.height
-  n := *noise
-  
-  for y := 0; y < height; y++ {
-    for x := xBegin; x < xEnd; x++ {
-      xFloat := float64(x) / float64(width)
-      yFloat := float64(y) / float64(height)
-      m :=   0.75 * n.Eval2(freq * xFloat, freq * yFloat) +
-             0.50 * n.Eval2(2 * freq * xFloat, 2 * freq * yFloat) +
-             0.25 * n.Eval2(4 * freq * xFloat, 4 * freq * yFloat) +
-             0.125 * n.Eval2(8 * freq * xFloat, 8 * freq * yFloat)
-
-      w.SetMoisture(x, y, m)
-    }
-  }
-  c <- 1
 }
 
 func (w World) CalcBiome(xBegin, xEnd int, c chan int) {
@@ -963,32 +946,27 @@ func (w *World) GeneratePath(start, goal *Location) bool {
 }
 
 func GenerateMap(hFreq, heightBaseline, edgeUp, edgeDown, falloff,
-                 mFreq, water, saturate,
+                 water, saturate,
                  sFreq, tFreq, pFreq, rFreq float64,
-                 width, height, numCPUs int) {
+                 width, height int, windDir uint, numCPUs int) {
   rand.Seed(time.Now().UTC().UnixNano())
   hSeed := rand.Int63()
-  mSeed := rand.Int63()
   sSeed := rand.Int63()
   tSeed := rand.Int63()
   pSeed := rand.Int63()
   rSeed := rand.Int63()
   fmt.Println("height seed:", hSeed)
-  fmt.Println("moisture seed:", mSeed)
   fmt.Println("soil seed:", sSeed)
   fmt.Println("tree seed:", tSeed)
   fmt.Println("plant seed:", pSeed)
   fmt.Println("rock seed:", rSeed)
   hNoise := opensimplex.New(hSeed)
-  //mNoise := opensimplex.New(mSeed)
   sNoise := opensimplex.New(sSeed)
   tNoise := opensimplex.New(tSeed)
   pNoise := opensimplex.New(pSeed)
   rNoise := opensimplex.New(rSeed)
 
-  world := CreateWorld(width, height, hFreq, mFreq, sFreq, tFreq, pFreq, rFreq,
-                       water)
-
+  world := CreateWorld(width, height, windDir, hFreq, sFreq, tFreq, pFreq, rFreq, water)
   start := time.Now()
 
   numThreads := 5 * numCPUs
@@ -998,7 +976,6 @@ func GenerateMap(hFreq, heightBaseline, edgeUp, edgeDown, falloff,
     xEnd := (i + 1) * width / numCPUs
     go world.CalcHeight(xBegin, xEnd, heightBaseline, edgeUp, edgeDown,
                         falloff, &hNoise, c)
-    //go world.CalcMoisture(xBegin, xEnd, &mNoise, c)
     go world.CalcSoilDepth(xBegin, xEnd,  &sNoise, c)
     go world.CalcTrees(xBegin, xEnd, &tNoise, c)
     go world.CalcPlants(xBegin, xEnd, &pNoise, c)
@@ -1024,7 +1001,7 @@ func GenerateMap(hFreq, heightBaseline, edgeUp, edgeDown, falloff,
     <-c
   }
 
-  world.Smooth()
+  world.FindNeighbours()
   world.AddRivers(saturate)
 
   numThreads = numCPUs * 2
@@ -1092,7 +1069,7 @@ func GenerateMap(hFreq, heightBaseline, edgeUp, edgeDown, falloff,
 
   fmt.Println("Duration: ", time.Now().Sub(start));
 
-  DrawMap(world, hSeed, mSeed, sSeed, tSeed, rSeed, numCPUs)
+  DrawMap(world, hSeed, sSeed, tSeed, rSeed, numCPUs)
   ExportJSON(world)
 }
 
@@ -1108,9 +1085,10 @@ func main() {
   edgeUp := flag.Float64("raise-edge", 0.05, "raise edges")
   edgeDown := flag.Float64("lower-edge", 0.4, "lower edges")
   falloff := flag.Float64("falloff", 5.0, "falloff rate")
-  mFreq := flag.Float64("mFreq", 1.0, "moisture noise frequency")
+
   water := flag.Float64("water", 50, "water")
-  saturate := flag.Float64("saturate", 10, "water saturation level") 
+  saturate := flag.Float64("saturate", 30, "water saturation level")
+  direction := flag.String("wind", "n", "wind direction")
   sFreq := flag.Float64("sFreq", 20, "soil depth noise frequency")
   tFreq := flag.Float64("tFreq", 200, "tree noise frequency")
   pFreq := flag.Float64("pFreq", 200, "plant noise frequency")
@@ -1131,10 +1109,22 @@ func main() {
     return
   }
 
+  var windDir uint = NORTH
+  if *direction == "e" {
+    windDir = EAST
+  } else if *direction == "s" {
+    windDir = SOUTH
+  } else if *direction == "w" {
+    windDir = WEST
+  } else if *direction != "n" {
+    fmt.Println("Invalid wind direction, choose: n,e,s,w");
+    return
+  }
+
   fmt.Println("width, height, threads")
   fmt.Println(*width, ",", *height, ",", *threads)
   GenerateMap(*hFreq, *bias, *edgeUp, *edgeDown, *falloff,
-              *mFreq, *water, *saturate,
+              *water, *saturate,
               *sFreq, *tFreq, *pFreq, *rFreq,
-              *width, *height, *threads)
+              *width, *height, windDir, *threads)
 }
