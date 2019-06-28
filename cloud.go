@@ -41,10 +41,8 @@ func (c *Cloud) update() bool {
   }
 
   multiplier := nextLoc.height / c.loc.height
-  total := RAIN * multiplier
-  if nextLoc.terrace > c.loc.terrace {
-    multiplier *= 2
-  }
+  boost := (c.moisture * 0.01) * (nextLoc.height - RAIN_LEVEL);
+  total := RAIN + (boost * multiplier)
 
   if c.moisture < total {
     nextLoc.moisture += c.moisture

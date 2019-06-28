@@ -161,10 +161,14 @@ func CreateWorld(width, height int, windDir uint, hFreq, tFreq, pFreq, rFreq,
   }
 
   w.clouds = make([]*Cloud, numClouds)
+  fmt.Println("sx,sy", sx,sy)
+  fmt.Println("ex,ey", ex,ey)
+  i := 0
   for x := sx; x <= ex; x++ {
     for y := sy; y <= ey; y++ {
       loc := w.Location(x, y)
-      w.clouds[x] = CreateCloud(water, windDir, loc, w);
+      w.clouds[i] = CreateCloud(water, windDir, loc, w);
+      i++
     }
   }
   return w
@@ -366,11 +370,7 @@ func (w World) AddRivers(saturate float64) {
 
     from := w.Location(loc.x, loc.y)
     to := w.Location(lowest.x, lowest.y)
-    if to.height < from.height {
-      to.moisture += from.moisture * 1.1
-    } else {
-      to.moisture += from.moisture
-    }
+    to.moisture += from.moisture
   }
   count := 0
   for y := 0; y < w.height; y++ {
@@ -606,6 +606,70 @@ func (w World) AnalyseRegions(xBegin, xEnd int, c chan int) {
     }
   }
   c <- 1
+}
+
+func isHigher(a, b *Location, locs []*Location, num int) int {
+  if (a.height > b.height) {
+    locs[num] = a
+    return 1
+  }
+  return 0
+}
+
+func (w World) Smooth() {
+  height := w.height
+  width := w.width
+  count := 0
+  var locs [8]*Location
+
+  for y := 0; y < height; y++ {
+    for x := 0; x < width; x++ {
+      centre := w.Location(x, y)
+      num := 0
+
+      if y - 1 >= 0 {
+        north := w.Location(x, y - 1)
+        num += isHigher(north, centre, locs[:], num)
+        if x + 1 < width {
+          northEast := w.Location(x + 1, y - 1)
+          num += isHigher(northEast, centre, locs[:], num)
+        }
+        if x - 1 >= 0 {
+          northWest := w.Location(x - 1, y - 1)
+          num += isHigher(northWest, centre, locs[:], num)
+        }
+      }
+      if y + 1 < height {
+        south := w.Location(x, y + 1)
+        num += isHigher(south, centre, locs[:], num)
+        if x + 1 < width {
+          southEast := w.Location(x + 1, y + 1)
+          num += isHigher(southEast, centre, locs[:], num)
+        }
+        if x - 1 >= 0 {
+          southWest := w.Location(x - 1, y + 1)
+          num += isHigher(southWest, centre, locs[:], num)
+        }
+      }
+      if x + 1 < width {
+        east := w.Location(x + 1, y)
+        num += isHigher(east, centre, locs[:], num)
+      }
+      if x - 1 >= 0 {
+        west := w.Location(x - 1, y)
+        num += isHigher(west, centre, locs[:], num)
+      }
+
+      if num > 5 {
+        for i := 0; i < num; i++ {
+          loc := locs[i]
+          w.SetTerrace(loc.x, loc.y, centre.terrace)
+          count++
+        }
+      }
+    }
+  }
+  fmt.Println("Smoothed out", count, "locations")
 }
 
 func (w World) FindNeighbours() {
@@ -945,6 +1009,7 @@ func GenerateMap(hFreq, heightBaseline, edgeUp, edgeDown, falloff,
   }
 
   world.AddMoisture()
+  world.Smooth()
 
   // We've calculate the heights, so now do the second pass and add shadow
   // features.
