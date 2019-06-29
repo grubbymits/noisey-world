@@ -314,14 +314,6 @@ func (w World) isRiverValid(centre *Location) bool {
 
 func (w World) AddWater(loc *Location) {
   loc.isRiver = true
-  west := w.Location(loc.x - 1, loc.y)
-  east := w.Location(loc.x + 1, loc.y)
-  if west.terrace > loc.terrace {
-    loc.addFeature(RIGHT_WATER_SHADOW_FEATURE)
-  }
-  if east.terrace > loc.terrace {
-    loc.addFeature(LEFT_WATER_SHADOW_FEATURE)
-  }
   // Square up the water so that a body of water is a minimum of 3x3 tiles.
   // This allows for a puddle of water to be surrounded in suitable tiles.
   if loc.x > 1 && loc.y > 1 && loc.x + 1 < w.width && loc.y + 1 < w.height {
@@ -608,62 +600,18 @@ func (w World) AnalyseRegions(xBegin, xEnd int, c chan int) {
   c <- 1
 }
 
-func isHigher(a, b *Location, locs []*Location, num int) int {
-  if (a.height > b.height) {
-    locs[num] = a
-    return 1
-  }
-  return 0
-}
-
 func (w World) Smooth() {
   height := w.height
   width := w.width
   count := 0
-  var locs [8]*Location
-
-  for y := 0; y < height; y++ {
+  for y := 2; y < height; y++ {
     for x := 0; x < width; x++ {
       centre := w.Location(x, y)
-      num := 0
-
-      if y - 1 >= 0 {
-        north := w.Location(x, y - 1)
-        num += isHigher(north, centre, locs[:], num)
-        if x + 1 < width {
-          northEast := w.Location(x + 1, y - 1)
-          num += isHigher(northEast, centre, locs[:], num)
-        }
-        if x - 1 >= 0 {
-          northWest := w.Location(x - 1, y - 1)
-          num += isHigher(northWest, centre, locs[:], num)
-        }
-      }
-      if y + 1 < height {
-        south := w.Location(x, y + 1)
-        num += isHigher(south, centre, locs[:], num)
-        if x + 1 < width {
-          southEast := w.Location(x + 1, y + 1)
-          num += isHigher(southEast, centre, locs[:], num)
-        }
-        if x - 1 >= 0 {
-          southWest := w.Location(x - 1, y + 1)
-          num += isHigher(southWest, centre, locs[:], num)
-        }
-      }
-      if x + 1 < width {
-        east := w.Location(x + 1, y)
-        num += isHigher(east, centre, locs[:], num)
-      }
-      if x - 1 >= 0 {
-        west := w.Location(x - 1, y)
-        num += isHigher(west, centre, locs[:], num)
-      }
-
-      if num > 5 {
-        for i := 0; i < num; i++ {
-          loc := locs[i]
-          w.SetTerrace(loc.x, loc.y, centre.terrace)
+      north := w.Location(x, y - 1)
+      if north.terrace > centre.terrace {
+        if w.Terrace(x, y - 2) != north.terrace {
+          w.SetTerrace(x, y - 2, north.terrace)
+          w.SetHeight(x, y - 2, north.height)
           count++
         }
       }
@@ -1110,7 +1058,7 @@ func main() {
   edgeDown := flag.Float64("lower-edge", 0.4, "lower edges")
   falloff := flag.Float64("falloff", 5.0, "falloff rate")
 
-  water := flag.Float64("water", 50, "water")
+  water := flag.Float64("water", 100, "water")
   saturate := flag.Float64("saturate", 30, "water saturation level")
   direction := flag.String("wind", "n", "wind direction")
   tFreq := flag.Float64("tFreq", 200, "tree noise frequency")

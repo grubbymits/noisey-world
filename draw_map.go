@@ -229,30 +229,24 @@ func (render *MapRenderer) DrawFeatures(loc *Location, biome uint8, x, y int) {
     drawnLast = !drawnLast
   }
 
-  if biome != RIVER {
-  if loc.hasFeature(RIGHT_SHADOW_FEATURE) {
-    render.shadowSheet.DrawFeature(x, y, RIGHT_VERTICAL_SHADOW, render.mapImg)
-  }
-  if loc.hasFeature(LEFT_SHADOW_FEATURE) {
-    render.shadowSheet.DrawFeature(x, y, LEFT_VERTICAL_SHADOW, render.mapImg)
-  }
-  if loc.hasFeature(HORIZONTAL_SHADOW_FEATURE) {
-    render.shadowSheet.DrawFeature(x, y, HORIZONTAL_SHADOW, render.mapImg)
-  }
-  if loc.hasFeature(BOTTOM_LEFT_SHADOW_FEATURE) {
-    render.shadowSheet.DrawFeature(x, y, BOTTOM_LEFT_SHADOW, render.mapImg)
-  }
-  if loc.hasFeature(BOTTOM_RIGHT_SHADOW_FEATURE) {
-    render.shadowSheet.DrawFeature(x, y, BOTTOM_RIGHT_SHADOW, render.mapImg)
-  }
-  } else {
-    if loc.hasFeature(LEFT_WATER_SHADOW_FEATURE) {
-      render.shadowSheet.DrawFeature(x, y, LEFT_VERTICAL_WATER_SHADOW, render.mapImg)
+  if !loc.isWater() {
+    if loc.hasFeature(RIGHT_SHADOW_FEATURE) {
+      render.shadowSheet.DrawFeature(x, y, RIGHT_VERTICAL_SHADOW, render.mapImg)
     }
-    if loc.hasFeature(RIGHT_WATER_SHADOW_FEATURE) {
-      render.shadowSheet.DrawFeature(x, y, RIGHT_VERTICAL_WATER_SHADOW, render.mapImg)
+    if loc.hasFeature(LEFT_SHADOW_FEATURE) {
+      render.shadowSheet.DrawFeature(x, y, LEFT_VERTICAL_SHADOW, render.mapImg)
+    }
+    if loc.hasFeature(HORIZONTAL_SHADOW_FEATURE) {
+      render.shadowSheet.DrawFeature(x, y, HORIZONTAL_SHADOW, render.mapImg)
+    }
+    if loc.hasFeature(BOTTOM_LEFT_SHADOW_FEATURE) {
+      render.shadowSheet.DrawFeature(x, y, BOTTOM_LEFT_SHADOW, render.mapImg)
+    }
+    if loc.hasFeature(BOTTOM_RIGHT_SHADOW_FEATURE) {
+      render.shadowSheet.DrawFeature(x, y, BOTTOM_RIGHT_SHADOW, render.mapImg)
     }
   }
+
   if loc.hasFeature(TREE_FEATURE) {
     trees := BIOME_TREES[biome]
     if len(trees) != 0 {

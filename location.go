@@ -132,6 +132,10 @@ func (l *Location) addNeighbour(loc *Location) {
   l.numNeighbours++
 }
 
+func (l *Location) isWater() bool {
+  return l.isRiver || l.isRiverBank || l.biome == OCEAN
+}
+
 func (l *Location) addFeature(feat uint) {
   l.features |= feat
 }
